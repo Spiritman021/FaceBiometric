@@ -3,6 +3,7 @@ package com.aican.biometricattendance.di
 import org.koin.dsl.module
 import androidx.room.Room
 import com.aican.biometricattendance.data.db.database.FaceEmbeddingDatabase
+import com.aican.biometricattendance.data.db.repository.AttendanceRepository
 import com.aican.biometricattendance.data.db.repository.FaceEmbeddingRepository
 
 val faceEmbeddingModule = module {
@@ -12,5 +13,7 @@ val faceEmbeddingModule = module {
             .build()
     }
     single { get<FaceEmbeddingDatabase>().faceEmbeddingDao() }
+    single { get<FaceEmbeddingDatabase>().attendanceDao() }
     single { FaceEmbeddingRepository(get()) }
+    single { AttendanceRepository(get()) }
 }

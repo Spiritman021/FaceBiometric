@@ -45,7 +45,7 @@ fun FacePositioningGuide(
         ) {
             Canvas(
                 modifier = Modifier
-                    .fillMaxWidth(0.6f)
+                    .fillMaxWidth(1f)
                     .aspectRatio(0.75f)
             ) {
                 val strokeWidth = 3.dp.toPx()

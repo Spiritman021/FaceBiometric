@@ -6,8 +6,6 @@ import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -20,13 +18,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import com.aican.biometricattendance.data.db.entity.FaceData
 import com.aican.biometricattendance.ml.facenet.UnifiedFaceEmbeddingProcessor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,23 +30,35 @@ import kotlinx.coroutines.withContext
 @Composable
 fun FaceRegistrationScreen(
     viewModel: FaceRegistrationViewModel,
+    id: String,
     onNavigateBack: () -> Unit,
-    onSubmissionSuccess: () -> Unit
+    onSubmissionSuccess: (String, String) -> Unit
 ) {
     val context = LocalContext.current
 
     val capturedFaceUri by viewModel.capturedFaceUri.collectAsStateWithLifecycle()
     val userName by viewModel.userName.collectAsStateWithLifecycle()
-    val userEmail by viewModel.userEmail.collectAsStateWithLifecycle()
+    val userId by viewModel.userId.collectAsStateWithLifecycle()
     val isSubmitting by viewModel.isSubmitting.collectAsStateWithLifecycle()
     val submitError by viewModel.submitError.collectAsStateWithLifecycle()
     val isSubmitted by viewModel.isSubmitted.collectAsStateWithLifecycle()
     val faceEmbedding by viewModel.faceEmbedding.collectAsStateWithLifecycle()
 
-    // Run navigation on successful submission
+    // New state: if matched email is found
+    var matchedId by remember { mutableStateOf<String?>(null) }
+    var showProceedAnyway by remember { mutableStateOf(false) }
+
+    LaunchedEffect(matchedId) {
+        if (matchedId == null) {
+            viewModel.updateUserId(id)
+            viewModel.updateUserName("")
+        }
+    }
+
     LaunchedEffect(isSubmitted) {
         if (isSubmitted) {
-            onSubmissionSuccess()
+            onSubmissionSuccess(userName, userId)
+
         }
     }
 
@@ -61,34 +68,32 @@ fun FaceRegistrationScreen(
         }
     }
 
-    // Safe image processing function
     suspend fun processImageSafely(uri: Uri): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 val inputStream = context.contentResolver.openInputStream(uri)
-                val bitmap = inputStream?.use { stream ->
-                    BitmapFactory.decodeStream(stream)
-                }
-
+                val bitmap = inputStream?.use { BitmapFactory.decodeStream(it) }
                 if (bitmap != null) {
                     val embeddingGenerator = UnifiedFaceEmbeddingProcessor(context)
                     val embeddingResult = embeddingGenerator.generateEmbedding(bitmap)
                     embeddingGenerator.close()
 
                     if (embeddingResult.success && embeddingResult.embedding != null) {
-                        val matchedFaceData: FaceData =
+                        val matchedFaceData =
                             viewModel.findMatchingEmail(embeddingResult.embedding!!)
                         withContext(Dispatchers.Main) {
-                            viewModel.updateUserEmail(matchedFaceData.email)
-                            viewModel.updateUserName(matchedFaceData.name)
+                            if (matchedFaceData.employeeId.isNotBlank()) {
+                                matchedId = matchedFaceData.employeeId
+                                viewModel.updateUserId(matchedFaceData.employeeId)
+                                viewModel.updateUserName(matchedFaceData.name)
+                            }
+                            viewModel.updateFaceEmbedding(embeddingResult.embedding)
                         }
                     }
                     true
-                } else {
-                    false
-                }
+                } else false
             } catch (e: Exception) {
-                Log.e("FaceRegistrationScreen", "Error processing image: ${e.message}")
+                Log.e("FaceRegistrationScreen", "Image processing error: ${e.message}")
                 false
             }
         }
@@ -96,13 +101,8 @@ fun FaceRegistrationScreen(
 
     LaunchedEffect(capturedFaceUri) {
         capturedFaceUri?.let { uri ->
-            // Only try auto-match if email is blank and we have a face
-            if (userEmail.isBlank()) {
-                try {
-                    processImageSafely(uri)
-                } catch (e: Exception) {
-                    Log.e("FaceRegistrationScreen", "LaunchedEffect error: ${e.message}")
-                }
+            if (userId.isBlank()) {
+                processImageSafely(uri)
             }
         }
     }
@@ -110,77 +110,96 @@ fun FaceRegistrationScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Face Registration") }, navigationIcon = {
-                IconButton(
-                    onClick = onNavigateBack, enabled = !isSubmitting
-                ) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                title = { Text("Face Registration") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack, enabled = !isSubmitting) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
                 }
-            }, colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
             )
-            )
-        }) { paddingValues ->
+        }
+    ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Top
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (faceEmbedding != null) {
-                Text(
-                    text = "Face Embedding (first 16 values):\n" + faceEmbedding!!.take(16)
-                    .joinToString(", ") { "%.4f".format(it) } + if (faceEmbedding!!.size > 16) "\n..." else "",
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(vertical = 16.dp))
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 24.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-            ) {
-                Row(
+            // Face match warning section
+            if (matchedId != null && !showProceedAnyway) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(bottom = 16.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "Face captured successfully!",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "This face appears to be already registered with:",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Email: $matchedId",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Divider(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            "Proceed Anyway with: $id", modifier = Modifier.align(Alignment.End),
+                            fontSize = 10.sp
+                        )
+                        Button(
+                            onClick = {
+                                viewModel.updateUserId(id)
+                                viewModel.updateUserName("")
+                                showProceedAnyway = true
+                            },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Text("Proceed Anyway")
+                        }
+
+
+                    }
                 }
             }
 
-            // Rectangular image preview
+            if (faceEmbedding != null) {
+                Text(
+                    text = "Embedding Preview:\n" +
+                            faceEmbedding!!.take(16).joinToString(", ") { "%.3f".format(it) } +
+                            if (faceEmbedding!!.size > 16) "\n..." else "",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 24.dp)
+                )
+            }
+
+            // Face image
             capturedFaceUri?.let { uri ->
                 Card(
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
                         .size(200.dp)
                         .padding(bottom = 24.dp),
-                    shape = RoundedCornerShape(0.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    elevation = CardDefaults.cardElevation(8.dp)
                 ) {
                     AsyncImage(
                         model = uri,
@@ -191,142 +210,78 @@ fun FaceRegistrationScreen(
                 }
             }
 
-            Text(
-                text = "Please provide your details to complete registration",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 32.dp)
-            )
+            if (matchedId == null || showProceedAnyway) {
+                // Form fields
+                Text(
+                    text = "Please provide your details",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
+                OutlinedTextField(
+                    value = userName,
+                    onValueChange = viewModel::updateUserName,
+                    label = { Text("Full Name") },
+                    leadingIcon = { Icon(Icons.Default.Person, null) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    OutlinedTextField(
-                        value = userName,
-                        onValueChange = viewModel::updateUserName,
-                        label = { Text("Full Name") },
-                        placeholder = { Text("Enter your full name") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Person, contentDescription = null
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                        enabled = !isSubmitting,
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Text, imeAction = ImeAction.Next
-                        ),
-                        isError = userName.isBlank() && submitError != null
-                    )
-                    if (userName.isBlank() && submitError != null) {
-                        Text(
-                            "Please enter your name",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
-                        )
-                    }
+                        .padding(bottom = 12.dp),
+                    singleLine = true,
+                    enabled = !isSubmitting
+                )
 
-                    OutlinedTextField(
-                        value = userEmail,
-                        onValueChange = viewModel::updateUserEmail,
-                        label = { Text("Email Address") },
-                        placeholder = { Text("Enter your email") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Email, contentDescription = null
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isSubmitting,
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Email, imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                if (viewModel.isFormValid() && !isSubmitting) {
-                                    viewModel.submitFaceData(context)
-                                }
-                            }),
-                        isError = userEmail.isNotBlank() && !viewModel.isEmailValid())
-                    if (userEmail.isNotBlank() && !viewModel.isEmailValid()) {
-                        Text(
-                            "Please enter a valid email address",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            submitError?.let { error ->
-                Card(
+                OutlinedTextField(
+                    value = userId,
+                    onValueChange = viewModel::updateUserId,
+                    label = { Text("Employee ID") },
+                    leadingIcon = { Icon(Icons.Default.VerifiedUser, null) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Error,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = error,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onNavigateBack,
+                        .padding(bottom = 12.dp),
+                    singleLine = true,
                     enabled = !isSubmitting,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Cancel")
+                    isError = userId.isBlank()
+                )
+
+                if (userId.isBlank()) {
+                    Text(
+                        text = "Please enter a valid user id",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
-                Button(
-                    onClick = { viewModel.submitFaceData(context) }, modifier = Modifier.weight(2f)
+
+                // Submit error
+                submitError?.let {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 8.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    if (isSubmitting) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
+                    OutlinedButton(
+                        onClick = onNavigateBack,
+                        enabled = !isSubmitting,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Cancel")
+                    }
+
+                    Button(
+                        onClick = { viewModel.submitFaceData(context) },
+                        enabled = !isSubmitting,
+                        modifier = Modifier.weight(2f)
+                    ) {
+                        if (isSubmitting) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
                                 color = Color.White,
@@ -334,9 +289,9 @@ fun FaceRegistrationScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Submitting...")
+                        } else {
+                            Text("Submit Registration")
                         }
-                    } else {
-                        Text("Submit Registration")
                     }
                 }
             }

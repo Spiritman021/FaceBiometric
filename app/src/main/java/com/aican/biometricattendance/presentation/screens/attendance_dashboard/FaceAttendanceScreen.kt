@@ -22,12 +22,16 @@ import com.aican.biometricattendance.data.models.ui.MenuItem
 import com.aican.biometricattendance.data.models.ui.QuickAction
 import com.aican.biometricattendance.navigation.routes.AppRoutes
 import com.aican.biometricattendance.presentation.screens.attendance_dashboard.components.QuickActionCard
+import com.aican.biometricattendance.presentation.screens.mark_attendance.AskForEmailDialog
 import com.aican.biometricattendance.presentation.theme.AttendanceTheme
 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FaceAttendanceScreen(navController: NavController) {
+    var showDialog by remember { mutableStateOf(false) }
+    var inputText by remember { mutableStateOf("") }
+
     val quickActions = listOf(
         QuickAction(
             icon = Icons.Filled.PersonAdd,
@@ -35,16 +39,16 @@ fun FaceAttendanceScreen(navController: NavController) {
             subtitle = "Add new employee",
             color = AttendanceTheme.Primary
         ),
-        QuickAction(
-            icon = Icons.Filled.Group,
-            title = "Register Face",
-            subtitle = "Manage profiles",
-            color = Color(0xFF9C27B0)
-        ),
+//        QuickAction(
+//            icon = Icons.Filled.Group,
+//            title = "Register Face",
+//            subtitle = "Manage profiles",
+//            color = Color(0xFF9C27B0)
+//        ),
         QuickAction(
             icon = Icons.Filled.CameraAlt,
             title = "Mark Attendance",
-            subtitle = "Clock in/out",
+            subtitle = "Check in/out",
             color = AttendanceTheme.Secondary
         ),
         QuickAction(
@@ -202,7 +206,7 @@ fun FaceAttendanceScreen(navController: NavController) {
                                 onClick = {
                                     when (action.title) {
                                         "Capture and Register Face" -> {
-                                            navController.navigate(AppRoutes.ROUTE_CAMERA_SCREEN.route)
+                                            navController.navigate(AppRoutes.ROUTE_CHECK_EMPLOYEE.route)
                                         }
 
                                         "Register Face" -> {
@@ -210,8 +214,14 @@ fun FaceAttendanceScreen(navController: NavController) {
                                         }
 
                                         "Mark Attendance" -> {
+                                            showDialog = true
 
                                         }
+
+                                        "Employees" -> {
+                                            navController.navigate(AppRoutes.ROUTE_REGISTERED_USERS.route)
+                                        }
+
                                     }
                                 }
                             ),
@@ -233,9 +243,18 @@ fun FaceAttendanceScreen(navController: NavController) {
                                 onClick = {
                                     when (action.title) {
                                         "Reports" -> {
+                                            navController.navigate(AppRoutes.ROUTE_ATTENDANCE_REPORT.route)
+
+                                        }
+
+                                        "Mark Attendance" -> {
+
+                                            showDialog = true
+
                                         }
 
                                         "Employees" -> {
+                                            navController.navigate(AppRoutes.ROUTE_REGISTERED_USERS.route)
                                         }
                                     }
                                 }
@@ -245,6 +264,7 @@ fun FaceAttendanceScreen(navController: NavController) {
                     }
                 }
             }
+
 
 //            item {
 //                Text(
@@ -280,6 +300,29 @@ fun FaceAttendanceScreen(navController: NavController) {
 //                FooterSection()
 //            }
         }
+    }
+
+
+
+    if (showDialog) {
+        AskForEmailDialog(
+            inputValue = inputText,
+            onInputChange = { inputText = it },
+            onProceed = { value ->
+                // Handle proceed logic here
+                println("User input: $value")
+                showDialog = false
+//                navController.navigate(AppRoutes.ROUTE_MARK_ATTENDANCE_SCREEN.route)
+
+                navController.navigate(
+                    AppRoutes.navigateToMarkAttendance(value.toString())
+                )
+
+            },
+            onDismissRequest = {
+                showDialog = false
+            }
+        )
     }
 }
 

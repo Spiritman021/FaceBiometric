@@ -21,11 +21,13 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.aican.biometricattendance.data.models.enums.CameraType
 import com.aican.biometricattendance.presentation.components.camera.BoundaryGuideOverlay
 import com.aican.biometricattendance.presentation.components.camera.CameraTopBar
 import com.aican.biometricattendance.presentation.components.camera.ControlButton
@@ -41,18 +43,20 @@ import com.google.android.datatransport.BuildConfig
 
 @Composable
 fun CameraPreviewContent(
+
+    cameraType: CameraType,
     viewModel: CameraPreviewViewModel,
+    id: String,
     onNavigateToFaceRegistration: (Uri) -> Unit,
     lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current,
+    onClose: () -> Unit
+
 ) {
     val surfaceRequest by viewModel.surfaceRequest.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     // UI States
     val shutterFlash by viewModel.shutterFlash.collectAsState()
-    val showDialog by viewModel.showPreviewDialog.collectAsState()
-    val capturedUri by viewModel.capturedPhotoUri.collectAsState()
-    val isUploading by viewModel.isUploading.collectAsState()
     val isProcessingPhoto by viewModel.isProcessingPhoto.collectAsState()
     val faceBoxes by viewModel.faceBoxes.collectAsState()
     val previewSize = remember { mutableStateOf(Size.Zero) }
@@ -60,23 +64,11 @@ fun CameraPreviewContent(
     // Enhanced face detection states
     val livenessStatus by viewModel.livenessStatus.collectAsState()
 
-    val showCaptureDialog by viewModel.showCaptureDialog.collectAsState()
     val capturedFaceUri by viewModel.capturedFaceUri.collectAsState()
-    val userName by viewModel.userName.collectAsState()
-    val userEmail by viewModel.userEmail.collectAsState()
-    val isSubmitting by viewModel.isSubmitting.collectAsState()
 
-    // Handle camera binding with fresh start
+    viewModel.updateCameraType(cameraType)
 
 
-
-//    LaunchedEffect(previewSize.value) {
-//        Log.d("CameraPreviewContent", "Preview size updated: ${previewSize.value}")
-//        if (previewSize.value.width > 0 && previewSize.value.height > 0) {
-//            viewModel.updatePreviewSize(previewSize.value.width, previewSize.value.height)
-//
-//        }
-//    }
 
     LaunchedEffect(previewSize.value, lifecycleOwner) {
         if (previewSize.value.width > 0 && previewSize.value.height > 0) {
@@ -85,15 +77,6 @@ fun CameraPreviewContent(
         }
     }
 
-
-//    LaunchedEffect(lifecycleOwner) {
-//        Log.d("CameraPreviewContent", "Binding to camera")
-//        viewModel.bindToCamera(context.applicationContext, lifecycleOwner)
-//    }
-
-
-    //Preview size updated: Size(1080.0, 1624.0)
-    //  Preview size updated: Size(1080.0, 1624.0)
 
     // Navigate to face capture screen when face is captured
     LaunchedEffect(capturedFaceUri) {
@@ -113,7 +96,7 @@ fun CameraPreviewContent(
     }
 
     Scaffold { paddingValues ->
-        // ... rest of your existing UI code remains the same ...
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -148,7 +131,7 @@ fun CameraPreviewContent(
                 }
 
                 // Top bar
-                CameraTopBar(onClose = {})
+                CameraTopBar(livenessStatus, onClose = onClose)
 
                 // Boundary guide overlay for edge detection issues
                 BoundaryGuideOverlay(
@@ -156,11 +139,11 @@ fun CameraPreviewContent(
                     modifier = Modifier.matchParentSize()
                 )
 
-                // Face positioning guide for poor position
-                FacePositioningGuide(
-                    livenessStatus = livenessStatus,
-                    modifier = Modifier.matchParentSize()
-                )
+//                // Face positioning guide for poor position
+//                FacePositioningGuide(
+//                    livenessStatus = livenessStatus,
+//                    modifier = Modifier.matchParentSize()
+//                )
 
                 // Enhanced face overlay with boundary indication
                 EnhancedFaceOverlay(
@@ -170,22 +153,29 @@ fun CameraPreviewContent(
                 )
 
                 // Status indicator at top
-                LivenessStatusIndicator(
-                    status = livenessStatus,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 80.dp)
-                )
+//                LivenessStatusIndicator(
+//                    status = livenessStatus,
+//                    modifier = Modifier
+//                        .align(Alignment.TopCenter)
+//                        .padding(top = 80.dp)
+//                )
 
                 // Instruction text with detailed guidance
-                FaceInstructionText(
-                    livenessStatus = livenessStatus,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 16.dp)
-                        .padding(horizontal = 32.dp)
-                )
+//                FaceInstructionText(
+//                    livenessStatus = livenessStatus,
+//                    modifier = Modifier
+//                        .align(Alignment.BottomCenter)
+//                        .padding(bottom = 16.dp)
+//                        .padding(horizontal = 32.dp)
+//                )
             }
+
+            Text(
+                text = "Capturing face for $id",
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(4.dp).fillMaxWidth()
+            )
 
             // Enhanced bottom control bar
             Box(
@@ -200,7 +190,7 @@ fun CameraPreviewContent(
                 ) {
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Quality indicator
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -224,31 +214,34 @@ fun CameraPreviewContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Camera toggle button
-                        ControlButton(
-                            icon = Icons.Default.FlipCameraAndroid,
-                            contentDescription = "Toggle Camera",
-                            onClick = { viewModel.toggleCamera() }
-                        )
+//                        ControlButton(
+//                            icon = Icons.Default.FlipCameraAndroid,
+//                            contentDescription = "Toggle Camera",
+//                            onClick = { viewModel.toggleCamera() }
+//                        )
 
                         // Enhanced capture button for cropped face
-                        SmartCaptureButton(
-                            livenessStatus = livenessStatus,
-                            onClick = {
-                                if (viewModel.isFaceSuitableForCapture()) {
-                                    viewModel.capturePhoto(context) { croppedUri ->
-                                        // Handle successful cropped face capture
-                                        // The URI points to the cropped face image only
+                        if (cameraType == CameraType.REGISTRATION) {
+                            SmartCaptureButton(
+                                livenessStatus = livenessStatus,
+                                onClick = {
+                                    if (viewModel.isFaceSuitableForCapture()) {
+                                        viewModel.capturePhoto(context) { croppedUri ->
+                                            // Handle successful cropped face capture
+                                            // The URI points to the cropped face image only
+                                        }
                                     }
                                 }
-                            }
-                        )
+                            )
+                        }
+
 
                         // Flash toggle button
-                        ControlButton(
-                            icon = Icons.Default.FlashOn,
-                            contentDescription = "Toggle Flash",
-                            onClick = { viewModel.toggleFlash() }
-                        )
+//                        ControlButton(
+//                            icon = Icons.Default.FlashOn,
+//                            contentDescription = "Toggle Flash",
+//                            onClick = { viewModel.toggleFlash() }
+//                        )
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))

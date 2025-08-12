@@ -2,6 +2,9 @@ package com.aican.biometricattendance.presentation.components.camera
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -15,30 +18,38 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.aican.biometricattendance.data.models.camera.enums.LivenessStatus
 
 
 @Composable
-fun CameraTopBar(onClose: () -> Unit) {
-    Box(
-        Modifier
+fun CameraTopBar(
+    livenessStatus: LivenessStatus,
+    modifier: Modifier = Modifier,
+    onClose: () -> Unit
+) {
+    Row(
+        modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onClose, modifier = Modifier.align(Alignment.CenterStart)) {
+        IconButton(onClick = onClose) {
             Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
         }
+        // Add some horizontal space if desired:
+        // Spacer(modifier = Modifier.width(8.dp))
+//        FacePositioningGuide(
+//            livenessStatus = livenessStatus,
+//            modifier = Modifier
+//                .weight(1f)
+//                .fillMaxHeight() // Use remaining height (optional)
+//        )
 
-        Column(Modifier.align(Alignment.Center)) {
-            Text(
-                "Face Capture Camera",
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                "Cropped Face Mode",
-                color = Color.White.copy(alpha = 0.7f),
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
+        LivenessStatusIndicator(
+            status = livenessStatus,
+            modifier = Modifier.weight(1f)
+        )
+
     }
 }
+

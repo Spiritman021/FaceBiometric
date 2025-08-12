@@ -13,10 +13,18 @@ import com.aican.biometricattendance.navigation.routes.AppRoutes
 import com.aican.biometricattendance.presentation.screens.attendance_dashboard.FaceAttendanceScreen
 import com.aican.biometricattendance.presentation.screens.camera.CameraPreviewScreen
 import com.aican.biometricattendance.presentation.screens.camera.CameraPreviewViewModel
+import com.aican.biometricattendance.presentation.screens.face_registration.CheckEmployeeScreen
 import com.aican.biometricattendance.presentation.screens.face_registration.FaceImagePickerScreen
 import com.aican.biometricattendance.presentation.screens.face_registration.FaceRegistrationScreen
+import com.aican.biometricattendance.presentation.screens.face_registration.FaceRegistrationSuccessScreen
 import com.aican.biometricattendance.presentation.screens.face_registration.FaceRegistrationViewModel
-import com.aican.biometricattendance.presentation.screens.face_registration.SubmissionSuccessScreen
+import com.aican.biometricattendance.presentation.screens.mark_attendance.AttendanceVerificationViewModel
+import com.aican.biometricattendance.presentation.screens.mark_attendance.MarkAttendanceScreen
+import com.aican.biometricattendance.presentation.screens.mark_attendance.MarkStatusScreen
+import com.aican.biometricattendance.presentation.screens.registered_user.RegisteredUsersScreen
+import com.aican.biometricattendance.presentation.screens.registered_user.RegisteredUsersViewModel
+import com.aican.biometricattendance.presentation.screens.reports_screen.AttendanceReportScreen
+import com.aican.biometricattendance.presentation.screens.reports_screen.AttendanceReportViewModel
 import com.aican.biometricattendance.presentation.screens.splash.SplashScreen
 import org.koin.androidx.compose.koinViewModel
 
@@ -28,8 +36,7 @@ fun GlobalNavigationHost(
 ) {
 
     NavHost(
-        navController = navHostController,
-        startDestination = AppRoutes.ROUTE_SPLASH_SCREEN.route
+        navController = navHostController, startDestination = AppRoutes.ROUTE_SPLASH_SCREEN.route
     ) {
         composable(
             route = AppRoutes.ROUTE_SPLASH_SCREEN.route,
@@ -60,13 +67,17 @@ fun GlobalNavigationHost(
 
         composable(
             route = AppRoutes.ROUTE_CAMERA_SCREEN.route,
+            arguments = listOf(navArgument("id") { type = NavType.StringType }),
             enterTransition = slideUpDownEnterTransition,
             exitTransition = slideUpDownExitTransition,
             popEnterTransition = slideUpDownPopEnterTransition,
             popExitTransition = slideUpDownPopExitTransition
 
 
-        ) {
+        ) { backStackEntry ->
+
+            val id = backStackEntry.arguments?.getString("id") ?: ""
+
 
             val cameraPreviewViewModel: CameraPreviewViewModel = koinViewModel()
 
@@ -77,31 +88,108 @@ fun GlobalNavigationHost(
 
             CameraPreviewScreen(
                 viewModel = cameraPreviewViewModel,
+                id = id,
                 onNavigateToFaceRegistration = { uri ->
 
                     navHostController.navigate(
-                        AppRoutes.navigateToFaceCapture(uri.toString())
+                        AppRoutes.navigateToFaceCapture(uri.toString(), id)
                     ) {
                         popUpTo(AppRoutes.ROUTE_CAMERA_SCREEN.route) {
                             inclusive = true
                         }
                     }
 
-                }, handleClose = {
+                },
+                handleClose = {
                     navHostController.popBackStack()
-                }
-            )
+                })
         }
 
         composable(
+            route = AppRoutes.ROUTE_MARK_ATTENDANCE_SCREEN.route,
+            arguments = listOf(navArgument("id") { type = NavType.StringType }),
+            enterTransition = slideUpDownEnterTransition,
+            exitTransition = slideUpDownExitTransition,
+            popEnterTransition = slideUpDownPopEnterTransition,
+            popExitTransition = slideUpDownPopExitTransition
+
+
+        ) { backStackEntry ->
+            val attendanceVerificationViewModel: AttendanceVerificationViewModel = koinViewModel()
+            val id = backStackEntry.arguments?.getString("id") ?: ""
+
+
+
+            MarkAttendanceScreen(
+                id = id.toString(),
+                viewModel = attendanceVerificationViewModel,
+                navController = navHostController,
+                handleClose = {
+                    navHostController.popBackStack()
+                },
+                onNavigateToFaceRegistration = { uri ->
+                    navHostController.navigate(
+                        AppRoutes.navigateToFaceCapture(uri.toString(), id)
+                    ) {
+                        popUpTo(AppRoutes.ROUTE_CAMERA_SCREEN.route) {
+                            inclusive = true
+                        }
+                    }
+
+                },
+            )
+        }
+        composable(
+            route = "mark-status/{email}/{percentage}",
+            arguments = listOf(
+                navArgument("email") { type = NavType.StringType },
+                navArgument("percentage") { type = NavType.StringType }),
+            enterTransition = slideUpDownEnterTransition,
+            exitTransition = slideUpDownExitTransition,
+            popEnterTransition = slideUpDownPopEnterTransition,
+            popExitTransition = slideUpDownPopExitTransition
+        ) { backStackEntry ->
+            val attendanceVerificationViewModel: AttendanceVerificationViewModel = koinViewModel()
+
+            val employeeId = backStackEntry.arguments?.getString("email") ?: ""
+            val percentage = backStackEntry.arguments?.getString("percentage") ?: ""
+            MarkStatusScreen(
+                email = employeeId,
+                matchPercent = percentage,
+                employeeId = employeeId,
+                viewModel = attendanceVerificationViewModel,
+                onBack = { navHostController.popBackStack() })
+        }
+
+
+        composable(
+            route = AppRoutes.ROUTE_CHECK_EMPLOYEE.route,
+            enterTransition = slideUpDownEnterTransition,
+            exitTransition = slideUpDownExitTransition,
+            popEnterTransition = slideUpDownPopEnterTransition,
+            popExitTransition = slideUpDownPopExitTransition
+        ) {
+            CheckEmployeeScreen(
+                faceRegistrationViewModel = faceRegistrationViewModel,
+                navController = navHostController,
+                proceedToRegister = { employeeId ->
+                    navHostController.navigate(AppRoutes.navigateToCameraScreen(employeeId))
+                })
+        }
+
+
+        composable(
             route = AppRoutes.ROUTE_FACE_REGISTRATION.route,
-            arguments = listOf(navArgument("capturedUri") { type = NavType.StringType }),
+            arguments = listOf(
+                navArgument("capturedUri") { type = NavType.StringType },
+                navArgument("id") { type = NavType.StringType }),
             enterTransition = slideUpDownEnterTransition,
             exitTransition = slideUpDownExitTransition,
             popEnterTransition = slideUpDownPopEnterTransition,
             popExitTransition = slideUpDownPopExitTransition
         ) { backStackEntry ->
             val capturedUriString = backStackEntry.arguments?.getString("capturedUri")
+            val id = backStackEntry.arguments?.getString("id") ?: ""
             val capturedUri = capturedUriString?.let { Uri.parse(Uri.decode(it)) }
 
 
@@ -110,36 +198,48 @@ fun GlobalNavigationHost(
                 capturedUri?.let { faceRegistrationViewModel.initializeWithUri(it) }
             }
 
-            FaceRegistrationScreen(
-                viewModel = faceRegistrationViewModel,
-                onNavigateBack = {
-                    navHostController.popBackStack()
-                },
-                onSubmissionSuccess = {
-                    // Navigate to success screen
-                    navHostController.navigate(AppRoutes.ROUTE_SUBMISSION_SUCCESS.route) {
-                        popUpTo(AppRoutes.ROUTE_CAMERA_SCREEN.route) { inclusive = true }
-                    }
+            FaceRegistrationScreen(viewModel = faceRegistrationViewModel, id, onNavigateBack = {
+                navHostController.popBackStack()
+            }, onSubmissionSuccess = { name, id ->
+                navHostController.navigate(
+                    "face_registration_success/${Uri.encode(name)}/${
+                        Uri.encode(
+                            id
+                        )
+                    }"
+                ) {
+
                 }
-            )
+            })
+
         }
 
 
         composable(
-            route = AppRoutes.ROUTE_SUBMISSION_SUCCESS.route,
+            route = "face_registration_success/{name}/{id}",
+            arguments = listOf(
+                navArgument("name") { type = NavType.StringType },
+                navArgument("id") { type = NavType.StringType },
+            ),
             enterTransition = slideUpDownEnterTransition,
             exitTransition = slideUpDownExitTransition,
             popEnterTransition = slideUpDownPopEnterTransition,
             popExitTransition = slideUpDownPopExitTransition
-        ) {
-            SubmissionSuccessScreen(
+        ) { backStackEntry ->
+            val name = backStackEntry.arguments?.getString("name") ?: ""
+            val id = backStackEntry.arguments?.getString("id") ?: ""
+
+            FaceRegistrationSuccessScreen(
+                name = name,
+                employeeId = id,
                 onNavigateHome = {
                     navHostController.navigate(AppRoutes.ROUTE_DASHBOARD.route) {
-                        popUpTo(0) // Clear entire back stack
+                        popUpTo(0)
                     }
                 }
             )
         }
+
 
         composable(
             route = AppRoutes.ROUTE_FACE_IMAGE_PICKER.route,
@@ -148,21 +248,46 @@ fun GlobalNavigationHost(
             popEnterTransition = slideUpDownPopEnterTransition,
             popExitTransition = slideUpDownPopExitTransition
         ) {
-            FaceImagePickerScreen(
-                onImagePicked = { uri ->
-                    navHostController.navigate(
-                        AppRoutes.navigateToFaceCapture(uri.toString())
-                    ) {
-                        popUpTo(AppRoutes.ROUTE_FACE_IMAGE_PICKER.route) {
-                            inclusive = true
-                        }
+            FaceImagePickerScreen(onImagePicked = { uri ->
+                navHostController.navigate(
+                    AppRoutes.navigateToFaceCapture(uri.toString(), "")
+                ) {
+                    popUpTo(AppRoutes.ROUTE_FACE_IMAGE_PICKER.route) {
+                        inclusive = true
                     }
+                }
 
-                },
-                onCancel = { navHostController.popBackStack() }
-            )
+            }, onCancel = { navHostController.popBackStack() })
         }
 
+        composable(
+            route = AppRoutes.ROUTE_REGISTERED_USERS.route,
+            enterTransition = slideUpDownEnterTransition,
+            exitTransition = slideUpDownExitTransition,
+            popEnterTransition = slideUpDownPopEnterTransition,
+            popExitTransition = slideUpDownPopExitTransition
+        ) {
+
+            val registeredUsersViewModel: RegisteredUsersViewModel = koinViewModel()
+            RegisteredUsersScreen(viewModel = registeredUsersViewModel, onBack = {
+                navHostController.popBackStack()
+            })
+
+        }
+        composable(
+            route = AppRoutes.ROUTE_ATTENDANCE_REPORT.route,
+            enterTransition = slideUpDownEnterTransition,
+            exitTransition = slideUpDownExitTransition,
+            popEnterTransition = slideUpDownPopEnterTransition,
+            popExitTransition = slideUpDownPopExitTransition
+        ) {
+
+            val attendanceReportViewModel: AttendanceReportViewModel = koinViewModel()
+            AttendanceReportScreen(viewModel = attendanceReportViewModel, onBack = {
+                navHostController.popBackStack()
+            })
+
+        }
     }
 
 

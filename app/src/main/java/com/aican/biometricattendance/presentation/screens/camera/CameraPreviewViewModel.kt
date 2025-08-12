@@ -18,6 +18,7 @@ import androidx.lifecycle.ViewModel // Android ViewModel class
 import androidx.lifecycle.viewModelScope // Coroutine scope tied to ViewModel lifecycle
 import com.aican.biometricattendance.data.models.camera.FaceBox // Data class for detected face bounding box
 import com.aican.biometricattendance.data.models.camera.enums.LivenessStatus // Enum for face liveness status
+import com.aican.biometricattendance.data.models.enums.CameraType
 import com.aican.biometricattendance.data.models.faceembedding.EmbeddingQuality // Data class for embedding quality metrics
 import com.aican.biometricattendance.data.models.faceembedding.EmbeddingStats // Data class for embedding statistics
 import com.aican.biometricattendance.ml.camera.FaceAnalyzer // Custom ImageAnalysis.Analyzer for face detection and liveness
@@ -48,7 +49,6 @@ class CameraPreviewViewModel : ViewModel() {
     private lateinit var livenessDetector: LivenessDetector
     private lateinit var cameraController: CameraController
     private lateinit var faceRegistrationService: FaceRegistrationService
-
 
 
     // --- Face Registration Dialog States ---
@@ -111,6 +111,12 @@ class CameraPreviewViewModel : ViewModel() {
         null // CameraX ImageAnalysis use case for real-time processing
 
     private var unifiedFaceEmbeddingProcessor: UnifiedFaceEmbeddingProcessor? = null
+
+    private var _cameraType = CameraType.ATTENDANCE
+
+    fun updateCameraType(type: CameraType) {
+        _cameraType = type
+    }
 
 
     /**
@@ -192,7 +198,7 @@ class CameraPreviewViewModel : ViewModel() {
                     previewHeight = previewHeight,
                     isMirrored = isFrontCamera // Pass mirroring info
                 ) { boxes ->
-                    updateFaceBoxes(boxes) // Callback to update ViewModel with detected faces
+                    updateFaceBoxes(boxes)
                 }
 
                 currentAnalyzer = faceAnalyzer // Store reference to the created analyzer
@@ -205,26 +211,6 @@ class CameraPreviewViewModel : ViewModel() {
             }
     }
 
-    /**
-     * Debugging function to log the current state of camera-related variables.
-     * @param context A descriptive string for the log (e.g., "BIND_START").
-     */
-    fun debugCameraState(context: String) {
-        Log.d(
-            "CameraViewModel", """
-        🔍 DEBUG CAMERA STATE [$context]:
-        - previewWidth: $previewWidth
-        - previewHeight: $previewHeight  
-        - isCameraBound: $isCameraBound
-        - cameraProvider: ${cameraProvider != null}
-        - imageCapture: ${imageCapture != null}
-        - imageAnalyzer: ${imageAnalyzer != null}
-        - currentAnalyzer: ${currentAnalyzer != null}
-        - surfaceRequest: ${_surfaceRequest.value != null}
-        - cameraSelector: ${if (cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA) "FRONT" else "BACK"}
-    """.trimIndent()
-        )
-    }
 
     /**
      * Binds CameraX use cases (Preview, ImageCapture, ImageAnalysis) to the lifecycle owner.
@@ -309,37 +295,6 @@ class CameraPreviewViewModel : ViewModel() {
         }
     }
 
-    /**
-     * Toggles between front and back camera.
-     * This will trigger a re-binding of the camera in `LaunchedEffect` in the Composable.
-     */
-    fun toggleCamera() {
-        cameraSelector = if (cameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
-            CameraSelector.DEFAULT_FRONT_CAMERA
-        } else {
-            CameraSelector.DEFAULT_BACK_CAMERA
-        }
-
-        updateImageAnalyzer() // Analyzer needs to be updated when camera direction changes (for mirroring)
-
-        Log.d(
-            "CameraViewModel", "Camera toggled - Now using: ${
-                if (cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA) "FRONT" else "BACK"
-            }"
-        )
-    }
-
-    /**
-     * Toggles the flash mode (On/Off).
-     */
-    fun toggleFlash() {
-        flashEnabled = !flashEnabled
-        imageCapture?.flashMode = if (flashEnabled) {
-            ImageCapture.FLASH_MODE_ON
-        } else {
-            ImageCapture.FLASH_MODE_OFF
-        }
-    }
 
     /**
      * Checks if the detected face is suitable for capture based on liveness and face presence.
@@ -923,4 +878,59 @@ class CameraPreviewViewModel : ViewModel() {
 
         Log.d("CameraViewModel", "🔄 Camera state reset completely")
     }
+
+    /**
+     * Toggles between front and back camera.
+     * This will trigger a re-binding of the camera in `LaunchedEffect` in the Composable.
+     */
+    fun toggleCamera() {
+        cameraSelector = if (cameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
+            CameraSelector.DEFAULT_FRONT_CAMERA
+        } else {
+            CameraSelector.DEFAULT_BACK_CAMERA
+        }
+
+        updateImageAnalyzer() // Analyzer needs to be updated when camera direction changes (for mirroring)
+
+        Log.d(
+            "CameraViewModel", "Camera toggled - Now using: ${
+                if (cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA) "FRONT" else "BACK"
+            }"
+        )
+    }
+
+    /**
+     * Toggles the flash mode (On/Off).
+     */
+    fun toggleFlash() {
+        flashEnabled = !flashEnabled
+        imageCapture?.flashMode = if (flashEnabled) {
+            ImageCapture.FLASH_MODE_ON
+        } else {
+            ImageCapture.FLASH_MODE_OFF
+        }
+    }
+
+    /**
+     * Debugging function to log the current state of camera-related variables.
+     * @param context A descriptive string for the log (e.g., "BIND_START").
+     */
+    fun debugCameraState(context: String) {
+        Log.d(
+            "CameraViewModel", """
+        🔍 DEBUG CAMERA STATE [$context]:
+        - previewWidth: $previewWidth
+        - previewHeight: $previewHeight  
+        - isCameraBound: $isCameraBound
+        - cameraProvider: ${cameraProvider != null}
+        - imageCapture: ${imageCapture != null}
+        - imageAnalyzer: ${imageAnalyzer != null}
+        - currentAnalyzer: ${currentAnalyzer != null}
+        - surfaceRequest: ${_surfaceRequest.value != null}
+        - cameraSelector: ${if (cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA) "FRONT" else "BACK"}
+    """.trimIndent()
+        )
+    }
+
+
 }

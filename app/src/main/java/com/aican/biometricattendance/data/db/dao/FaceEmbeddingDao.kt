@@ -14,6 +14,6 @@ interface FaceEmbeddingDao {
     @Query("SELECT * FROM face_embeddings")
     suspend fun getAllEmbeddings(): List<FaceEmbeddingEntity>
 
-    @Query("SELECT * FROM face_embeddings WHERE email = :email LIMIT 1")
-    suspend fun findByEmail(email: String): FaceEmbeddingEntity?
+    @Query("SELECT * FROM face_embeddings WHERE employeeId = :employeeId LIMIT 1")
+    suspend fun findByEmployeeId(employeeId: String): FaceEmbeddingEntity?
 }
