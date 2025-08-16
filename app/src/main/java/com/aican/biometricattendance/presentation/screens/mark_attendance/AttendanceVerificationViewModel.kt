@@ -109,6 +109,9 @@ class AttendanceVerificationViewModel(
     val isProcessingPhoto = MutableStateFlow(false)
     val shutterFlash = MutableStateFlow(false)
 
+
+
+
     init {
         // Initialize face embedding processor
         initializeFaceProcessor()
@@ -655,11 +658,14 @@ class AttendanceVerificationViewModel(
     /// marking status
 
     val lastEvent = MutableStateFlow<AttendanceEntity?>(null)
-
+    private val _lastEventReady = MutableStateFlow(false)
+    val lastEventReady: StateFlow<Boolean> = _lastEventReady
 
     fun fetchLastEvent(employeeId: String) {
         viewModelScope.launch {
             lastEvent.value = attendanceRepository.getLastEvent(employeeId)
+            _lastEventReady.value = true
+
         }
     }
 

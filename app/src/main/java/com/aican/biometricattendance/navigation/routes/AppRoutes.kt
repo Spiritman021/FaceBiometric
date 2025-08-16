@@ -6,6 +6,8 @@ import android.net.Uri
 sealed class AppRoutes(val route: String) {
 
     data object ROUTE_SPLASH_SCREEN : AppRoutes("splash_screen")
+    data object ROUTE_LOGIN : AppRoutes("login")                 // ← new
+    data object ROUTE_ACCOUNT : AppRoutes("account")
 
 
     data object ROUTE_DASHBOARD : AppRoutes("dashboard")

@@ -1,5 +1,6 @@
 package com.aican.biometricattendance.di
 
+import com.aican.biometricattendance.presentation.screens.accounts.AccountViewModel
 import com.aican.biometricattendance.presentation.screens.camera.CameraPreviewViewModel
 import com.aican.biometricattendance.presentation.screens.face_registration.FaceRegistrationViewModel
 import com.aican.biometricattendance.presentation.screens.mark_attendance.AttendanceVerificationViewModel
@@ -29,5 +30,9 @@ val viewModelModule = module {
     viewModel {
         AttendanceVerificationViewModel(get(), get())
 
+    }
+
+    viewModel {
+        AccountViewModel(get())
     }
 }

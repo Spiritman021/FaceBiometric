@@ -9,7 +9,10 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.aican.biometricattendance.data.local.TokenStore
 import com.aican.biometricattendance.navigation.routes.AppRoutes
+import com.aican.biometricattendance.presentation.screens.accounts.AccountScreen
+import com.aican.biometricattendance.presentation.screens.accounts.AccountViewModel
 import com.aican.biometricattendance.presentation.screens.attendance_dashboard.FaceAttendanceScreen
 import com.aican.biometricattendance.presentation.screens.camera.CameraPreviewScreen
 import com.aican.biometricattendance.presentation.screens.camera.CameraPreviewViewModel
@@ -18,6 +21,8 @@ import com.aican.biometricattendance.presentation.screens.face_registration.Face
 import com.aican.biometricattendance.presentation.screens.face_registration.FaceRegistrationScreen
 import com.aican.biometricattendance.presentation.screens.face_registration.FaceRegistrationSuccessScreen
 import com.aican.biometricattendance.presentation.screens.face_registration.FaceRegistrationViewModel
+import com.aican.biometricattendance.presentation.screens.login.LoginScreen
+import com.aican.biometricattendance.presentation.screens.login.LoginViewModel
 import com.aican.biometricattendance.presentation.screens.mark_attendance.AttendanceVerificationViewModel
 import com.aican.biometricattendance.presentation.screens.mark_attendance.MarkAttendanceScreen
 import com.aican.biometricattendance.presentation.screens.mark_attendance.MarkStatusScreen
@@ -27,17 +32,30 @@ import com.aican.biometricattendance.presentation.screens.reports_screen.Attenda
 import com.aican.biometricattendance.presentation.screens.reports_screen.AttendanceReportViewModel
 import com.aican.biometricattendance.presentation.screens.splash.SplashScreen
 import org.koin.androidx.compose.koinViewModel
-
+import org.koin.compose.koinInject
 
 @Composable
 fun GlobalNavigationHost(
     navHostController: NavHostController,
     faceRegistrationViewModel: FaceRegistrationViewModel,
+    tokenStore: TokenStore = koinInject(),
 ) {
 
     NavHost(
         navController = navHostController, startDestination = AppRoutes.ROUTE_SPLASH_SCREEN.route
     ) {
+
+        composable(
+            route = AppRoutes.ROUTE_LOGIN.route,
+            enterTransition = slideUpDownEnterTransition,
+            exitTransition = slideUpDownExitTransition,
+            popEnterTransition = slideUpDownPopEnterTransition,
+            popExitTransition = slideUpDownPopExitTransition
+        ) {
+            val vm: LoginViewModel = koinViewModel()
+            LoginScreen(navController = navHostController, viewModel = vm)
+        }
+
         composable(
             route = AppRoutes.ROUTE_SPLASH_SCREEN.route,
             enterTransition = slideUpDownEnterTransition,
@@ -47,10 +65,31 @@ fun GlobalNavigationHost(
 
 
         ) {
+
+
             SplashScreen {
-                navHostController.navigate(AppRoutes.ROUTE_DASHBOARD.route)
+                // in SplashScreen onFinished:
+                if (tokenStore.getToken().isNullOrEmpty()) {
+                    navHostController.navigate(AppRoutes.ROUTE_LOGIN.route)
+                } else {
+                    navHostController.navigate(AppRoutes.ROUTE_DASHBOARD.route)
+                }
+
+//                navHostController.navigate(AppRoutes.ROUTE_DASHBOARD.route)
             }
         }
+
+        composable(
+            route = AppRoutes.ROUTE_ACCOUNT.route,
+            enterTransition = slideUpDownEnterTransition,
+            exitTransition = slideUpDownExitTransition,
+            popEnterTransition = slideUpDownPopEnterTransition,
+            popExitTransition = slideUpDownPopExitTransition
+        ) {
+            val vm: AccountViewModel = koinViewModel()
+            AccountScreen(navController = navHostController, viewModel = vm)
+        }
+
 
         composable(
             route = AppRoutes.ROUTE_DASHBOARD.route,
@@ -61,7 +100,11 @@ fun GlobalNavigationHost(
 
         ) {
 
-            FaceAttendanceScreen(navController = navHostController)
+            FaceAttendanceScreen(navController = navHostController) {
+                tokenStore.clear()
+
+                navHostController.navigate(AppRoutes.ROUTE_LOGIN.route)
+            }
 
         }
 
@@ -158,7 +201,13 @@ fun GlobalNavigationHost(
                 matchPercent = percentage,
                 employeeId = employeeId,
                 viewModel = attendanceVerificationViewModel,
-                onBack = { navHostController.popBackStack() })
+                onBack = {
+                    // Pop everything up to (but not including) the Dashboard
+                    navHostController.popBackStack(
+                        AppRoutes.ROUTE_DASHBOARD.route,
+                        /* inclusive = */ false
+                    )
+                })
         }
 
 

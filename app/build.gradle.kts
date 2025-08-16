@@ -102,4 +102,10 @@ dependencies {
     // See Add the KSP plugin to your project
     ksp("androidx.room:room-compiler:$room_version")
     implementation("androidx.room:room-ktx:${room_version}")
+
+
+    implementation("com.squareup.retrofit2:retrofit:3.0.0")
+    implementation("com.squareup.retrofit2:converter-gson:3.0.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:5.1.0")
+    implementation("com.squareup.retrofit2:converter-moshi:3.0.0")
 }

@@ -21,4 +21,11 @@ interface AttendanceDao {
 
     @Query("SELECT * FROM attendance_logs ORDER BY timestamp DESC")
     suspend fun getAllAttendanceLogs(): List<AttendanceEntity>
+
+    @Query("SELECT * FROM attendance_logs WHERE synced = 0 ORDER BY timestamp ASC")
+    suspend fun getUnsynced(): List<AttendanceEntity>
+
+    @Query("SELECT COUNT(*) FROM attendance_logs WHERE synced = 0")
+    suspend fun getUnsyncedCount(): Int
+
 }

@@ -28,7 +28,7 @@ import com.aican.biometricattendance.presentation.theme.AttendanceTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FaceAttendanceScreen(navController: NavController) {
+fun FaceAttendanceScreen(navController: NavController, logOut: () -> Unit) {
     var showDialog by remember { mutableStateOf(false) }
     var inputText by remember { mutableStateOf("") }
 
@@ -133,19 +133,14 @@ fun FaceAttendanceScreen(navController: NavController) {
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* Notifications */ }) {
-                        Badge(
-                            containerColor = AttendanceTheme.Error
-                        ) {
-                            Text("3")
-                        }
+                    IconButton(onClick = logOut) {
                         Icon(
-                            Icons.Outlined.Notifications,
-                            contentDescription = "Notifications",
+                            Icons.Default.Logout, // Make sure you import: import androidx.compose.material.icons.filled.Logout
+                            contentDescription = "Logout",
                             tint = Color.White
                         )
                     }
-                    IconButton(onClick = { /* Profile */ }) {
+                    IconButton(onClick = { navController.navigate(AppRoutes.ROUTE_ACCOUNT.route) }) {
                         Box(
                             modifier = Modifier
                                 .size(32.dp)
@@ -333,7 +328,7 @@ fun StatCard(
     value: String,
     subtitle: String,
     color: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Card(
         colors = CardDefaults.cardColors(

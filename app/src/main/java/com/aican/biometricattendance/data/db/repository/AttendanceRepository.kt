@@ -10,8 +10,13 @@ class AttendanceRepository(private val dao: AttendanceDao) {
 
     suspend fun getLastEvent(employeeId: String): AttendanceEntity? = dao.getLastEvent(employeeId)
 
-    suspend fun getTodayLogs(employeeId: String): List<AttendanceEntity> = dao.getTodayLogs(employeeId)
+    suspend fun getTodayLogs(employeeId: String): List<AttendanceEntity> =
+        dao.getTodayLogs(employeeId)
 
     suspend fun getAllAttendanceLogs(): List<AttendanceEntity> = dao.getAllAttendanceLogs()
+
+    suspend fun getUnsynced(): List<AttendanceEntity> = dao.getUnsynced()
+
+    suspend fun getUnsyncedCount(): Int = dao.getUnsyncedCount()
 
 }
