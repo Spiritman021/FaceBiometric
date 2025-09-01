@@ -35,7 +35,7 @@ fun FaceAttendanceScreen(navController: NavController, logOut: () -> Unit) {
     val quickActions = listOf(
         QuickAction(
             icon = Icons.Filled.PersonAdd,
-            title = "Capture and Register Face",
+            title = "Register User",
             subtitle = "Add new employee",
             color = AttendanceTheme.Primary
         ),
@@ -200,7 +200,7 @@ fun FaceAttendanceScreen(navController: NavController, logOut: () -> Unit) {
                             action = action.copy(
                                 onClick = {
                                     when (action.title) {
-                                        "Capture and Register Face" -> {
+                                        "Register User" -> {
                                             navController.navigate(AppRoutes.ROUTE_CHECK_EMPLOYEE.route)
                                         }
 
@@ -209,7 +209,10 @@ fun FaceAttendanceScreen(navController: NavController, logOut: () -> Unit) {
                                         }
 
                                         "Mark Attendance" -> {
-                                            showDialog = true
+//                                            showDialog = true
+                                            navController.navigate(
+                                                AppRoutes.navigateToMarkAttendance("")
+                                            )
 
                                         }
 
@@ -244,7 +247,11 @@ fun FaceAttendanceScreen(navController: NavController, logOut: () -> Unit) {
 
                                         "Mark Attendance" -> {
 
-                                            showDialog = true
+//                                            showDialog = true
+                                            navController.navigate(
+                                                AppRoutes.navigateToMarkAttendance("")
+                                            )
+
 
                                         }
 

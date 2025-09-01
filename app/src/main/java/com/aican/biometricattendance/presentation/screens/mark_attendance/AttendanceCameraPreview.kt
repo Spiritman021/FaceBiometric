@@ -27,6 +27,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
@@ -41,29 +42,27 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-import com.aican.biometricattendance.data.models.enums.CameraType
+import com.aican.biometricattendance.data.models.camera.enums.LivenessStatus
 import com.aican.biometricattendance.presentation.components.camera.BoundaryGuideOverlay
 import com.aican.biometricattendance.presentation.components.camera.CameraTopBar
 import com.aican.biometricattendance.presentation.components.camera.DebugInfoText
 import com.aican.biometricattendance.presentation.components.camera.EnhancedFaceOverlay
 import com.aican.biometricattendance.presentation.components.camera.FaceInstructionText
 import com.aican.biometricattendance.presentation.components.camera.FacePositioningGuide
-import com.aican.biometricattendance.presentation.components.camera.LivenessStatusIndicator
 import com.aican.biometricattendance.presentation.components.camera.ProcessingOverlay
 import com.aican.biometricattendance.presentation.components.camera.QualityIndicator
-import com.aican.biometricattendance.presentation.components.camera.SmartCaptureButton
+import com.aican.biometricattendance.presentation.screens.mark_attendance.components.AttendanceStatusDialog
 import com.google.android.datatransport.BuildConfig
 
 @Composable
 fun AttendanceCameraPreview(
-    id: String,
+    // ## CHANGE 1: Remove the `id` parameter ##
+    // id: String,
     navController: NavHostController,
     attendanceVerificationViewModel: AttendanceVerificationViewModel,
     lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current,
-    onClose: () -> Unit
-
+    onClose: () -> Unit,
 ) {
-
     val context = LocalContext.current
     val faceBoxes by attendanceVerificationViewModel.faceBoxes.collectAsState()
     val livenessStatus by attendanceVerificationViewModel.livenessStatus.collectAsState()
@@ -77,26 +76,38 @@ fun AttendanceCameraPreview(
     val captureStatus by attendanceVerificationViewModel.captureStatus.collectAsState()
     val similarityScore by attendanceVerificationViewModel.similarityScore.collectAsState()
     val attendanceResult by attendanceVerificationViewModel.attendanceResult.collectAsState()
-    val matchedFaceData =
-        attendanceVerificationViewModel.faceEmbeddedDataFromDatabase.collectAsState().value
+    val guideColor = when (livenessStatus) {
+        LivenessStatus.LIVE_FACE -> Color(0xFF4CAF50) // Green for success (Ready to Capture)
+        LivenessStatus.CHECKING -> Color.Yellow      // Yellow while checking
+        LivenessStatus.NO_FACE -> Color.White       // Default white
+        else -> Color(0xFFFF5722)                     // Red for any issue (poor position, etc.)
+    }
 
+
+    // ## NEW: State to control dialog visibility and hold data ##
+    var showStatusDialog by remember { mutableStateOf(false) }
+    var dialogData by remember { mutableStateOf<Pair<String, Float>?>(null) }
+
+    // ## CHANGE 2: Update navigation logic to use the ID from the result ##
     LaunchedEffect(attendanceResult) {
-        if (attendanceResult?.success == true && matchedFaceData != null) {
-
-
-//            attendanceVerificationViewModel.resetVerificationState()
-
-
+        val result = attendanceResult
+        if (result?.success == true && result.matchedEmployeeId != null) {
             val matchPercent = (similarityScore * 100)
-            print("MatchPercent: $matchPercent")
+            attendanceVerificationViewModel.pauseAnalysis()
 
-            navController.navigate("mark-status/${matchedFaceData.employeeId}/$matchPercent")
+            // ## CHANGE: Instead of navigating, set the state to show the dialog ##
+            dialogData = Pair(result.matchedEmployeeId, matchPercent)
+            showStatusDialog = true
 
+            // Original navigation is removed
+            // navController.navigate("mark-status/${result.matchedEmployeeId}/$matchPercent")
         }
     }
-    LaunchedEffect(id) {
-        attendanceVerificationViewModel.getFaceEmbeddingFromDatabase(id)
-    }
+
+    // ## CHANGE 3: Remove the LaunchedEffect that depended on 'id' ##
+    // LaunchedEffect(id) {
+    //     attendanceVerificationViewModel.getFaceEmbeddingFromDatabase(id)
+    // }
 
     LaunchedEffect(previewSize.value, lifecycleOwner) {
         if (previewSize.value.width > 0 && previewSize.value.height > 0) {
@@ -111,6 +122,8 @@ fun AttendanceCameraPreview(
     DisposableEffect(lifecycleOwner) {
         onDispose {
             attendanceVerificationViewModel.unbindCamera()
+            // Reset state when leaving the screen to be ready for the next person
+            attendanceVerificationViewModel.resetVerificationState()
         }
     }
 
@@ -127,7 +140,6 @@ fun AttendanceCameraPreview(
                     .onGloballyPositioned { layoutCoordinates ->
                         val width = layoutCoordinates.size.width.toFloat()
                         val height = layoutCoordinates.size.height.toFloat()
-                        Log.d("CameraPreviewContent", "Preview size updated2: $width x $height")
                         previewSize.value = Size(width, height)
                     }
             ) {
@@ -147,41 +159,28 @@ fun AttendanceCameraPreview(
                             .background(Color.White.copy(alpha = 0.6f))
                     )
                 }
-
-                // Top bar
+                FacePositioningGuide(
+                    modifier = Modifier.fillMaxSize(),
+                    guideColor = guideColor // The color will change based on the live status
+                )
+                // UI Overlays
                 CameraTopBar(livenessStatus = livenessStatus, onClose = onClose)
-
-                // Boundary guide overlay for edge detection issues
                 BoundaryGuideOverlay(
                     livenessStatus = livenessStatus,
                     modifier = Modifier.matchParentSize()
                 )
-
-
-                // Enhanced face overlay with boundary indication
-                EnhancedFaceOverlay(
-                    faceBoxes = faceBoxes,
-                    livenessStatus = livenessStatus,
-                    modifier = Modifier.matchParentSize()
-                )
-
-                // Status indicator at top
-
-                // Auto capture status overlay
+//                EnhancedFaceOverlay(faceBoxes = faceBoxes, livenessStatus = livenessStatus, modifier = Modifier.matchParentSize())
                 AutoCaptureStatusOverlay(
                     captureStatus = captureStatus,
-                    isProcessing = isAutoProcessing,
                     modifier = Modifier
                         .align(Alignment.Center)
                         .padding(16.dp)
                 )
-
-                // Instruction text with detailed guidance
-
             }
 
+            // ## CHANGE 4: Update the instructional text ##
             Text(
-                text = "Verifying face for $id",
+                text = "Searching for a registered face...",
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
@@ -189,27 +188,22 @@ fun AttendanceCameraPreview(
                     .fillMaxWidth()
             )
 
-            // Enhanced bottom control bar with attendance results
+            // Bottom control bar
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(250.dp) // Increased height for attendance results
+                    .height(250.dp)
+                    .background(color = Color.Black)
             ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(color = Color.Black)
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     Spacer(modifier = Modifier.height(16.dp))
                     FaceInstructionText(
                         livenessStatus = livenessStatus,
-                        modifier = Modifier
-                            .padding(bottom = 16.dp)
-                            .padding(horizontal = 32.dp)
+                        modifier = Modifier.padding(bottom = 16.dp, start = 32.dp, end = 32.dp)
                     )
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -221,8 +215,10 @@ fun AttendanceCameraPreview(
                             isVisible = faceBoxes.isNotEmpty()
                         )
                     }
-                    // Attendance result card
+
+                    // Show the result card only when there's a result
                     attendanceResult?.let { result ->
+                        Spacer(modifier = Modifier.height(8.dp))
                         AttendanceResultCard(
                             result = result,
                             modifier = Modifier
@@ -231,41 +227,15 @@ fun AttendanceCameraPreview(
                         )
                     }
 
+                    Spacer(modifier = Modifier.weight(1f)) // Pushes debug info to the bottom
 
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Similarity score display
-//                    if (similarityScore > 0) {
-//                        SimilarityScoreDisplay(
-//                            score = similarityScore,
-//                            modifier = Modifier
-//                                .fillMaxWidth()
-//                                .padding(horizontal = 32.dp)
-//                        )
-//                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Control buttons row (if needed for manual operations)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 32.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Add manual controls if needed
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Debug info (remove in production)
                     if (BuildConfig.DEBUG) {
                         DebugInfoText(
                             livenessStatus = livenessStatus,
                             quality = attendanceVerificationViewModel.getFaceQualityScore(),
-                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .padding(bottom = 8.dp)
                         )
                     }
                 }
@@ -273,72 +243,63 @@ fun AttendanceCameraPreview(
         }
     }
 
-    // Processing overlay
     if (isProcessingPhoto || isAutoProcessing) {
         ProcessingOverlay()
+    }
+
+    if (showStatusDialog && dialogData != null) {
+        AttendanceStatusDialog(
+            employeeId = dialogData!!.first,
+            matchPercent = dialogData!!.second,
+            viewModel = attendanceVerificationViewModel,
+            onDismiss = {
+                showStatusDialog = false
+                dialogData = null
+                attendanceVerificationViewModel.resumeAnalysis()
+                // Resetting the state makes the camera ready for the next person
+                attendanceVerificationViewModel.resetVerificationState()
+            }
+        )
     }
 }
 
 @Composable
 fun AutoCaptureStatusOverlay(
     captureStatus: CaptureStatus,
-    isProcessing: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    when (captureStatus) {
-        CaptureStatus.CAPTURING -> {
-            Card(
-                modifier = modifier,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
-                    Text(
-                        text = "Capturing...",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-        }
+    if (captureStatus == CaptureStatus.IDLE || captureStatus == CaptureStatus.COMPLETED) {
+        // Don't show overlay for these states
+        return
+    }
 
-        CaptureStatus.PROCESSING -> {
-            Card(
-                modifier = modifier,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondary),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
-                    Text(
-                        text = "Processing face...",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-        }
+    val (text, color) = when (captureStatus) {
+        CaptureStatus.CAPTURING -> "Capturing..." to MaterialTheme.colorScheme.primary
+        CaptureStatus.PROCESSING -> "Processing Face..." to MaterialTheme.colorScheme.secondary
+        else -> "" to Color.Transparent
+    }
 
-        else -> { /* No overlay for other states */
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = color),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                color = Color.White,
+                strokeWidth = 2.dp
+            )
+            Text(
+                text = text,
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
@@ -346,78 +307,35 @@ fun AutoCaptureStatusOverlay(
 @Composable
 fun AttendanceResultCard(
     result: AttendanceResult,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
+    val backgroundColor = if (result.success) Color(0xFF4CAF50) else Color(0xFFFF5722)
+    val title = if (result.success) "✅ Verification Passed" else "❌ Verification Failed"
+
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(
-            containerColor = if (result.success) {
-                Color(0xFF4CAF50) // Green for success
-            } else {
-                Color(0xFFFF5722) // Red for failure
-            }
-        ),
+        colors = CardDefaults.cardColors(containerColor = backgroundColor),
         shape = RoundedCornerShape(12.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = if (result.success) "✅ Verification Passed" else "❌ Verification Failed",
+                text = title,
                 color = Color.White,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
             )
-
             Spacer(modifier = Modifier.height(4.dp))
-
             Text(
                 text = result.message,
-                color = Color.White,
+                color = Color.White.copy(alpha = 0.9f),
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-@Composable
-fun SimilarityScoreDisplay(
-    score: Float,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                score >= 0.8f -> Color(0xFF4CAF50) // Green for high similarity
-                score >= 0.6f -> Color(0xFFFF9800) // Orange for medium similarity
-                else -> Color(0xFFFF5722) // Red for low similarity
-            }
-        ),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "Similarity Score",
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium
-            )
-
-            Text(
-                text = "${(score * 100).toInt()}%",
-                color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
             )
         }
     }

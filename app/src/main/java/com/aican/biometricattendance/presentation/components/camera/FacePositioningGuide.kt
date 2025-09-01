@@ -28,60 +28,53 @@ import com.aican.biometricattendance.data.models.camera.enums.LivenessStatus
 import com.aican.biometricattendance.ml.camera.FaceAnalyzer
 
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.unit.Dp
+
+/**
+ * A static overlay that draws a centered oval guide for the user to position their face in.
+ *
+ * @param guideColor The color of the oval's border. Can be changed dynamically for feedback.
+ * @param strokeWidth The width of the oval's border.
+ */
 @Composable
 fun FacePositioningGuide(
-    livenessStatus: LivenessStatus,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    guideColor: Color = Color.White,
+    strokeWidth: Dp = 3.dp
 ) {
-    AnimatedVisibility(
-        visible = livenessStatus == LivenessStatus.POOR_POSITION,
-        enter = fadeIn() + scaleIn(),
-        exit = fadeOut() + scaleOut(),
-        modifier = modifier
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Canvas(
-                modifier = Modifier
-                    .fillMaxWidth(1f)
-                    .aspectRatio(0.75f)
-            ) {
-                val strokeWidth = 3.dp.toPx()
-                val dashLength = 10.dp.toPx()
-                val gapLength = 8.dp.toPx()
+    Canvas(modifier = modifier) {
+        val canvasWidth = size.width
+        val canvasHeight = size.height
 
-                drawRoundRect(
-                    color = Color.White.copy(alpha = 0.8f),
-                    size = size,
-                    style = Stroke(
-                        width = strokeWidth,
-                        pathEffect = PathEffect.dashPathEffect(
-                            floatArrayOf(dashLength, gapLength),
-                            0f
-                        )
-                    ),
-                    cornerRadius = CornerRadius(12.dp.toPx())
-                )
-            }
+        // Define the oval's size and position (centered)
+        val ovalWidth = canvasWidth * 0.75f
+        val ovalHeight = ovalWidth * 1.3f // Ovals for faces are taller than wide
+        val left = (canvasWidth - ovalWidth) / 2
+        val top = (canvasHeight - ovalHeight) / 2
 
-            Card(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Black.copy(alpha = 0.8f)
-                )
-            ) {
-                Text(
-                    text = "Position your face within this area",
-                    modifier = Modifier.padding(12.dp),
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodySmall,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
+        val ovalRect = Rect(Offset(left, top), Size(ovalWidth, ovalHeight))
+
+        // Draw the semi-transparent background scrim
+        drawRect(color = Color.Black.copy(alpha = 0.5f))
+
+        // "Cut out" the oval shape from the background scrim
+        drawOval(
+            color = Color.Transparent,
+            topLeft = ovalRect.topLeft,
+            size = ovalRect.size,
+            blendMode = BlendMode.Clear // This creates the transparent cutout
+        )
+
+        // Draw the border around the oval cutout
+        drawOval(
+            color = guideColor,
+            topLeft = ovalRect.topLeft,
+            size = ovalRect.size,
+            style = Stroke(width = strokeWidth.toPx())
+        )
     }
 }

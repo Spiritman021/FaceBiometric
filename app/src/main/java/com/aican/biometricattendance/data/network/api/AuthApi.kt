@@ -1,6 +1,5 @@
 package com.aican.biometricattendance.data.network.api
 
-// data/network/AuthApi.kt
 
 import retrofit2.http.Body
 import retrofit2.http.Headers

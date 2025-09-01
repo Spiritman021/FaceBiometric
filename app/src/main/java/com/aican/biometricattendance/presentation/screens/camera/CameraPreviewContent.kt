@@ -27,6 +27,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.aican.biometricattendance.data.models.camera.enums.LivenessStatus
 import com.aican.biometricattendance.data.models.enums.CameraType
 import com.aican.biometricattendance.presentation.components.camera.BoundaryGuideOverlay
 import com.aican.biometricattendance.presentation.components.camera.CameraTopBar
@@ -76,7 +77,12 @@ fun CameraPreviewContent(
             viewModel.bindToCamera(context, lifecycleOwner)
         }
     }
-
+    val guideColor = when (livenessStatus) {
+        LivenessStatus.LIVE_FACE -> Color(0xFF4CAF50) // Green for success (Ready to Capture)
+        LivenessStatus.CHECKING -> Color.Yellow      // Yellow while checking
+        LivenessStatus.NO_FACE -> Color.White       // Default white
+        else -> Color(0xFFFF5722)                     // Red for any issue (poor position, etc.)
+    }
 
     // Navigate to face capture screen when face is captured
     LaunchedEffect(capturedFaceUri) {
@@ -146,10 +152,15 @@ fun CameraPreviewContent(
 //                )
 
                 // Enhanced face overlay with boundary indication
-                EnhancedFaceOverlay(
-                    faceBoxes = faceBoxes,
-                    livenessStatus = livenessStatus,
-                    modifier = Modifier.matchParentSize()
+//                EnhancedFaceOverlay(
+//                    faceBoxes = faceBoxes,
+//                    livenessStatus = livenessStatus,
+//                    modifier = Modifier.matchParentSize()
+//                )
+
+                FacePositioningGuide(
+                    modifier = Modifier.fillMaxSize(),
+                    guideColor = guideColor // The color will change based on the live status
                 )
 
                 // Status indicator at top

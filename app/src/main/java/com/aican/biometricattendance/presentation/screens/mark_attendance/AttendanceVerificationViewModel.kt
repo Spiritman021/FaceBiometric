@@ -37,6 +37,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import kotlin.math.max
+import kotlin.math.min
 
 class AttendanceVerificationViewModel(
     private val faceEmbeddingRepository: FaceEmbeddingRepository,
@@ -45,9 +48,9 @@ class AttendanceVerificationViewModel(
 
     var faceEmbeddingProcessor: UnifiedFaceEmbeddingProcessor? = null
 
-    private val _faceEmbeddedDataFromDatabase = MutableStateFlow<FaceEmbeddingEntity?>(null)
-    val faceEmbeddedDataFromDatabase: StateFlow<FaceEmbeddingEntity?> =
-        _faceEmbeddedDataFromDatabase
+    // StateFlow to hold the list of ALL registered embeddings in memory
+    private val _allRegisteredEmbeddings = MutableStateFlow<List<FaceEmbeddingEntity>>(emptyList())
+    val allRegisteredEmbeddings: StateFlow<List<FaceEmbeddingEntity>> = _allRegisteredEmbeddings
 
     // --- MediaPipe Face Detection States ---
     private val _faceBoxes =
@@ -85,15 +88,15 @@ class AttendanceVerificationViewModel(
     val captureStatus: StateFlow<CaptureStatus> = _captureStatus.asStateFlow()
 
     // Auto capture configuration
-    private val SIMILARITY_THRESHOLD = 0.60f // Adjust based on your requirements
+    private val SIMILARITY_THRESHOLD = 0.80f
     private val QUALITY_THRESHOLD = 0.6f
-    private val AUTO_CAPTURE_DELAY = 2000L // 2 seconds delay for stable face
+    private val AUTO_CAPTURE_DELAY = 1500L // Reduced delay for faster capture
     private var lastCaptureTime = 0L
-    private val MIN_CAPTURE_INTERVAL = 3000L // 3 seconds between captures
+    private val MIN_CAPTURE_INTERVAL = 3000L
 
     // Stability tracking
     private var stableFaceCount = 0
-    private val REQUIRED_STABLE_FRAMES = 30 // ~1 second at 30fps
+    private val REQUIRED_STABLE_FRAMES = 20 // Reduced for faster stability check
     private var isStabilityCheckActive = false
 
     // --- CameraX and Core Camera States ---
@@ -109,18 +112,15 @@ class AttendanceVerificationViewModel(
     val isProcessingPhoto = MutableStateFlow(false)
     val shutterFlash = MutableStateFlow(false)
 
-
-
-
     init {
-        // Initialize face embedding processor
+        // Load all registered faces from the database into memory
+        loadAllRegisteredEmbeddings()
         initializeFaceProcessor()
     }
 
     private fun initializeFaceProcessor() {
         viewModelScope.launch {
             try {
-                // We'll initialize this when context is available in bindToCamera
                 Log.d(TAG, "Face processor will be initialized when camera binds")
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing face processor", e)
@@ -128,9 +128,17 @@ class AttendanceVerificationViewModel(
         }
     }
 
+    private fun loadAllRegisteredEmbeddings() {
+        viewModelScope.launch {
+            // Assumes you have a getAll() method in your repository/DAO
+            val allUsers = faceEmbeddingRepository.getAll()
+            _allRegisteredEmbeddings.value = allUsers
+            Log.d(TAG, "Loaded ${allUsers.size} registered faces into memory.")
+        }
+    }
+
     suspend fun bindToCamera(appContext: Context, lifecycleOwner: LifecycleOwner) {
         try {
-            // Initialize face embedding processor if not already done
             if (faceEmbeddingProcessor == null) {
                 faceEmbeddingProcessor = UnifiedFaceEmbeddingProcessor(appContext)
                 Log.d(TAG, "Face embedding processor initialized")
@@ -143,9 +151,7 @@ class AttendanceVerificationViewModel(
             }
 
             imageCapture = ImageCapture.Builder()
-                .setFlashMode(
-                    if (flashEnabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
-                )
+                .setFlashMode(if (flashEnabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF)
                 .setTargetAspectRatio(AspectRatio.RATIO_4_3)
                 .build()
 
@@ -158,9 +164,7 @@ class AttendanceVerificationViewModel(
                     }
                 }
 
-            Log.d(TAG, "updatePreviewSize: $previewWidth x $previewHeight")
             imageAnalyzer = if (previewWidth > 0 && previewHeight > 0) {
-                Log.d(TAG, "Creating new analyzer")
                 createImageAnalyzer(appContext)
             } else {
                 null
@@ -172,8 +176,6 @@ class AttendanceVerificationViewModel(
                 imageAnalyzer?.let { add(it) }
             }
 
-            Log.d(TAG, "Binding to camera with ${useCases.size} use cases")
-
             cameraProvider?.bindToLifecycle(
                 lifecycleOwner,
                 cameraSelector,
@@ -181,7 +183,7 @@ class AttendanceVerificationViewModel(
             )
 
             isCameraBound = true
-            Log.d(TAG, "✅ Camera bound successfully with ${useCases.size} use cases")
+            Log.d(TAG, "✅ Camera bound successfully")
 
             awaitCancellation()
         } catch (e: Exception) {
@@ -198,7 +200,6 @@ class AttendanceVerificationViewModel(
             .build()
             .also { analyzer ->
                 val isFrontCamera = cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
-
                 val faceAnalyzer = FaceAnalyzer(
                     context = context,
                     previewWidth = previewWidth,
@@ -206,26 +207,11 @@ class AttendanceVerificationViewModel(
                     isMirrored = isFrontCamera
                 ) { boxes ->
                     updateFaceBoxes(boxes)
-                    // Trigger auto capture logic when faces are detected
                     checkForAutoCapture(context)
                 }
-
                 currentAnalyzer = faceAnalyzer
-                Log.d(TAG, "Face analyzer created")
-
-                analyzer.setAnalyzer(
-                    ContextCompat.getMainExecutor(context),
-                    faceAnalyzer
-                )
+                analyzer.setAnalyzer(ContextCompat.getMainExecutor(context), faceAnalyzer)
             }
-    }
-
-    fun getFaceEmbeddingFromDatabase(id: String) {
-        viewModelScope.launch {
-            val result = faceEmbeddingRepository.findByEmployeeId(id)
-            Log.d(TAG, "Face embedding from database: $result")
-            _faceEmbeddedDataFromDatabase.value = result
-        }
     }
 
     fun updatePreviewSize(width: Float, height: Float) {
@@ -239,17 +225,10 @@ class AttendanceVerificationViewModel(
     fun updateFaceBoxes(boxes: List<FaceBox>) {
         viewModelScope.launch {
             _faceBoxes.emit(boxes)
-
             currentAnalyzer?.let { analyzer ->
-                val newStatus = analyzer.getCurrentLivenessStatus()
-                _livenessStatus.emit(newStatus)
+                _livenessStatus.emit(analyzer.getCurrentLivenessStatus())
                 _faceQualityScore.emit(analyzer.getFaceQualityScore())
-
-                if (newStatus == LivenessStatus.FACE_TOO_CLOSE_TO_EDGE) {
-                    Log.d(TAG, "Face too close to edge detected")
-                }
             }
-
             if (boxes.isNotEmpty()) {
                 lastDetectedFaceBox = boxes.first()
             }
@@ -258,51 +237,27 @@ class AttendanceVerificationViewModel(
 
     private fun checkForAutoCapture(context: Context) {
         val currentTime = System.currentTimeMillis()
-
-        // Check if enough time has passed since last capture
-        if (currentTime - lastCaptureTime < MIN_CAPTURE_INTERVAL) {
+        if (currentTime - lastCaptureTime < MIN_CAPTURE_INTERVAL || _isAutoProcessing.value || _captureStatus.value == CaptureStatus.PROCESSING) {
             return
         }
 
-        // Check if we're already processing
-        if (_isAutoProcessing.value || _captureStatus.value == CaptureStatus.PROCESSING) {
-            return
-        }
-
-        // Check face conditions
         val currentStatus = _livenessStatus.value
         val qualityScore = getFaceQualityScore()
         val hasValidFace = _faceBoxes.value.isNotEmpty()
 
-        if (hasValidFace &&
-            currentStatus == LivenessStatus.LIVE_FACE &&
-            qualityScore >= QUALITY_THRESHOLD
-        ) {
-
-            // Increment stable face count
+        if (hasValidFace && currentStatus == LivenessStatus.LIVE_FACE && qualityScore >= QUALITY_THRESHOLD) {
             stableFaceCount++
-
-            // Check if face has been stable for required frames
             if (stableFaceCount >= REQUIRED_STABLE_FRAMES && !isStabilityCheckActive) {
                 isStabilityCheckActive = true
-
                 viewModelScope.launch {
                     delay(AUTO_CAPTURE_DELAY)
-
-                    // Double check conditions after delay
-                    if (_livenessStatus.value == LivenessStatus.LIVE_FACE &&
-                        getFaceQualityScore() >= QUALITY_THRESHOLD &&
-                        _faceBoxes.value.isNotEmpty()
-                    ) {
-
+                    if (_livenessStatus.value == LivenessStatus.LIVE_FACE && getFaceQualityScore() >= QUALITY_THRESHOLD && _faceBoxes.value.isNotEmpty()) {
                         performAutoCapture(context)
                     }
-
                     isStabilityCheckActive = false
                 }
             }
         } else {
-            // Reset stability counter if conditions are not met
             stableFaceCount = 0
             isStabilityCheckActive = false
         }
@@ -310,20 +265,14 @@ class AttendanceVerificationViewModel(
 
     private fun performAutoCapture(context: Context) {
         lastCaptureTime = System.currentTimeMillis()
-
         viewModelScope.launch {
             _captureStatus.emit(CaptureStatus.CAPTURING)
             _isAutoProcessing.emit(true)
-
             try {
-                // Trigger shutter flash effect
                 shutterFlash.value = true
                 delay(100)
                 shutterFlash.value = false
-
-                // Capture image and process
                 captureAndProcessFace(context)
-
             } catch (e: Exception) {
                 Log.e(TAG, "Error in auto capture", e)
                 _captureStatus.emit(CaptureStatus.ERROR)
@@ -341,171 +290,151 @@ class AttendanceVerificationViewModel(
     }
 
     private suspend fun captureAndProcessFace(context: Context) {
-        val imageCapture = this.imageCapture ?: run {
-            Log.e(TAG, "ImageCapture not initialized")
-            _captureStatus.emit(CaptureStatus.ERROR)
-            return
-        }
+        val imageCapture = this.imageCapture ?: return
+        val faceBox = lastDetectedFaceBox ?: return
 
-        val faceBox = lastDetectedFaceBox ?: run {
-            Log.e(TAG, "No face box available for cropping")
-            _captureStatus.emit(CaptureStatus.ERROR)
-            return
-        }
-
-        try {
-            _captureStatus.emit(CaptureStatus.PROCESSING)
-
-            withContext(Dispatchers.IO) {
-                // Capture image using ImageCapture.OnImageCapturedCallback
-                imageCapture.takePicture(
-                    ContextCompat.getMainExecutor(context),
-                    object : ImageCapture.OnImageCapturedCallback() {
-                        override fun onCaptureSuccess(image: ImageProxy) {
-                            viewModelScope.launch {
-                                try {
-                                    // Convert ImageProxy to Bitmap
-                                    val bitmap = imageProxyToBitmap(image)
-
-                                    if (bitmap != null) {
-                                        processCaptureBitmap(bitmap, faceBox)
-                                    } else {
-                                        _captureStatus.emit(CaptureStatus.ERROR)
-                                        _attendanceResult.emit(
-                                            AttendanceResult(
-                                                success = false,
-                                                similarity = 0.0f,
-                                                message = "Failed to convert captured image"
-                                            )
-                                        )
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Error processing captured image", e)
-                                    _captureStatus.emit(CaptureStatus.ERROR)
-                                } finally {
-                                    image.close()
-                                }
-                            }
-                        }
-
-                        override fun onError(exception: ImageCaptureException) {
-                            Log.e(TAG, "Image capture failed", exception)
-                            viewModelScope.launch {
+        _captureStatus.emit(CaptureStatus.PROCESSING)
+        imageCapture.takePicture(
+            ContextCompat.getMainExecutor(context),
+            object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    viewModelScope.launch {
+                        try {
+                            val bitmap = imageProxyToBitmap(image)
+                            if (bitmap != null) {
+                                processCaptureBitmap(bitmap, faceBox)
+                            } else {
                                 _captureStatus.emit(CaptureStatus.ERROR)
                                 _attendanceResult.emit(
                                     AttendanceResult(
                                         success = false,
                                         similarity = 0.0f,
-                                        message = "Image capture failed"
+                                        message = "Failed to convert image"
                                     )
                                 )
                             }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error processing captured image", e)
+                            _captureStatus.emit(CaptureStatus.ERROR)
+                        } finally {
+                            image.close()
                         }
                     }
-                )
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    Log.e(TAG, "Image capture failed", exception)
+                    viewModelScope.launch {
+                        _captureStatus.emit(CaptureStatus.ERROR)
+                        _attendanceResult.emit(
+                            AttendanceResult(
+                                success = false,
+                                similarity = 0.0f,
+                                message = "Image capture failed"
+                            )
+                        )
+                    }
+                }
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in capture process", e)
-            _captureStatus.emit(CaptureStatus.ERROR)
-            _attendanceResult.emit(
-                AttendanceResult(
-                    success = false,
-                    similarity = 0.0f,
-                    message = "Capture error: ${e.message}"
-                )
-            )
-        }
+        )
     }
 
+    // #################################################################
+    // ## CORE 1:N IDENTIFICATION LOGIC IS IMPLEMENTED HERE           ##
+    // #################################################################
     private suspend fun processCaptureBitmap(bitmap: Bitmap, faceBox: FaceBox) {
         withContext(Dispatchers.IO) {
             try {
-                // Crop face from the captured bitmap
+                // Step 1: Crop face from the full image
                 val croppedFace = cropFaceFromBitmap(bitmap, faceBox)
-
                 if (croppedFace == null) {
                     _captureStatus.emit(CaptureStatus.ERROR)
                     _attendanceResult.emit(
                         AttendanceResult(
                             success = false,
                             similarity = 0.0f,
-                            message = "Failed to crop face from image"
+                            message = "Failed to crop face"
                         )
                     )
                     return@withContext
                 }
 
-                // Generate embedding using UnifiedFaceEmbeddingProcessor
-                val processor = faceEmbeddingProcessor
-                if (processor == null) {
-                    _captureStatus.emit(CaptureStatus.ERROR)
-                    _attendanceResult.emit(
-                        AttendanceResult(
-                            success = false,
-                            similarity = 0.0f,
-                            message = "Face processor not initialized"
-                        )
-                    )
-                    return@withContext
-                }
-
+                // Step 2: Generate embedding for the live face
+                val processor = faceEmbeddingProcessor!!
                 val embeddingResult = processor.generateEmbedding(croppedFace)
-
                 if (!embeddingResult.success || embeddingResult.embedding == null) {
                     _captureStatus.emit(CaptureStatus.ERROR)
                     _attendanceResult.emit(
                         AttendanceResult(
                             success = false,
                             similarity = 0.0f,
-                            message = embeddingResult.error ?: "Failed to generate embedding"
+                            message = embeddingResult.error ?: "Embedding failed"
                         )
                     )
                     return@withContext
                 }
 
-                // Compare with database embedding
-                val databaseEmbedding = _faceEmbeddedDataFromDatabase.value
-                if (databaseEmbedding?.embedding == null) {
+                // Step 3: Check if any faces are registered in the database
+                val registeredFaces = _allRegisteredEmbeddings.value
+                if (registeredFaces.isEmpty()) {
                     _captureStatus.emit(CaptureStatus.ERROR)
                     _attendanceResult.emit(
                         AttendanceResult(
                             success = false,
                             similarity = 0.0f,
-                            message = "No registered face found for comparison"
+                            message = "No faces registered in system"
                         )
                     )
                     return@withContext
                 }
 
-                // Convert stored embedding back to FloatArray
-                val storedEmbedding = Converters().toFloatArray(databaseEmbedding.embedding!!)
+                // Step 4: Perform the 1:N Search
+                var bestMatch: FaceEmbeddingEntity? = null
+                var highestSimilarity = 0.0f
+                val liveEmbedding = embeddingResult.embedding
 
-                // Calculate similarity
-                val similarity = processor.calculateSimilarity(
-                    embeddingResult.embedding,
-                    storedEmbedding
-                )
+                for (registeredFace in registeredFaces) {
+                    if (registeredFace.embedding == null) continue
+                    val storedEmbedding = Converters().toFloatArray(registeredFace.embedding)
+                    val similarity = processor.calculateSimilarity(liveEmbedding, storedEmbedding)
 
-                _similarityScore.emit(similarity)
+                    if (similarity > highestSimilarity) {
+                        highestSimilarity = similarity
+                        bestMatch = registeredFace
+                    }
+                }
+
+                // Step 5: Make a decision based on the best match found
+                _similarityScore.emit(highestSimilarity)
                 _captureStatus.emit(CaptureStatus.COMPLETED)
 
-                // Determine if attendance is successful
-                val isMatch = similarity >= SIMILARITY_THRESHOLD
+                val isMatch = highestSimilarity >= SIMILARITY_THRESHOLD && bestMatch != null
 
-                _attendanceResult.emit(
-                    AttendanceResult(
-                        success = isMatch,
-                        similarity = similarity,
-                        message = if (isMatch) {
-                            "Face verified successfully! Similarity: ${(similarity * 100).toInt()}%"
-                        } else {
-                            "Face verification failed. Similarity: ${(similarity * 100).toInt()}%"
-                        }
+                if (isMatch) {
+                    // SUCCESS: We identified someone
+                    _attendanceResult.emit(
+                        AttendanceResult(
+                            success = true,
+                            similarity = highestSimilarity,
+                            message = "Welcome, ${bestMatch!!.name}! Match: ${(highestSimilarity * 100).toInt()}%",
+                            matchedEmployeeId = bestMatch.employeeId
+                        )
                     )
-                )
-
-                Log.d(TAG, "Face comparison completed. Similarity: $similarity, Match: $isMatch")
-
+                    Log.d(
+                        TAG,
+                        "✅ Face identified as ${bestMatch.employeeId} with similarity $highestSimilarity"
+                    )
+                } else {
+                    // FAILURE: The person is not recognized
+                    _attendanceResult.emit(
+                        AttendanceResult(
+                            success = false,
+                            similarity = highestSimilarity,
+                            message = "Face not recognized. Best match: ${(highestSimilarity * 100).toInt()}%"
+                        )
+                    )
+                    Log.d(TAG, "❌ Face not recognized. Best match score: $highestSimilarity")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing face", e)
                 _captureStatus.emit(CaptureStatus.ERROR)
@@ -513,7 +442,7 @@ class AttendanceVerificationViewModel(
                     AttendanceResult(
                         success = false,
                         similarity = 0.0f,
-                        message = "Processing error: ${e.message}"
+                        message = "Processing error"
                     )
                 )
             }
@@ -522,19 +451,21 @@ class AttendanceVerificationViewModel(
 
     private fun cropFaceFromBitmap(bitmap: Bitmap, faceBox: FaceBox): Bitmap? {
         return try {
-            val left = maxOf(0, faceBox.left.toInt())
-            val top = maxOf(0, faceBox.top.toInt())
-            val right = minOf(bitmap.width, faceBox.right.toInt())
-            val bottom = minOf(bitmap.height, faceBox.bottom.toInt())
+            val scaleX = bitmap.width.toFloat() / previewWidth
+            val scaleY = bitmap.height.toFloat() / previewHeight
+
+            val left = max(0, (faceBox.left * scaleX).toInt())
+            val top = max(0, (faceBox.top * scaleY).toInt())
+            val right = min(bitmap.width, (faceBox.right * scaleX).toInt())
+            val bottom = min(bitmap.height, (faceBox.bottom * scaleY).toInt())
 
             val width = right - left
             val height = bottom - top
 
             if (width <= 0 || height <= 0) {
-                Log.e(TAG, "Invalid face bounds: width=$width, height=$height")
+                Log.e(TAG, "Invalid face bounds after scaling: width=$width, height=$height")
                 return null
             }
-
             Bitmap.createBitmap(bitmap, left, top, width, height)
         } catch (e: Exception) {
             Log.e(TAG, "Error cropping face", e)
@@ -544,15 +475,9 @@ class AttendanceVerificationViewModel(
 
     private fun imageProxyToBitmap(image: ImageProxy): Bitmap? {
         return try {
-            // Handle different image formats
             when (image.format) {
-                android.graphics.ImageFormat.YUV_420_888 -> {
-                    // Convert YUV to RGB
-                    yuvToRgbBitmap(image)
-                }
-
+                android.graphics.ImageFormat.YUV_420_888 -> yuvToRgbBitmap(image)
                 android.graphics.ImageFormat.JPEG -> {
-                    // Direct JPEG decoding
                     val buffer = image.planes[0].buffer
                     val bytes = ByteArray(buffer.remaining())
                     buffer.get(bytes)
@@ -572,16 +497,13 @@ class AttendanceVerificationViewModel(
 
     private fun yuvToRgbBitmap(image: ImageProxy): Bitmap? {
         return try {
-            val yBuffer = image.planes[0].buffer // Y
-            val uBuffer = image.planes[1].buffer // U
-            val vBuffer = image.planes[2].buffer // V
-
+            val yBuffer = image.planes[0].buffer
+            val uBuffer = image.planes[1].buffer
+            val vBuffer = image.planes[2].buffer
             val ySize = yBuffer.remaining()
             val uSize = uBuffer.remaining()
             val vSize = vBuffer.remaining()
-
             val nv21 = ByteArray(ySize + uSize + vSize)
-
             yBuffer.get(nv21, 0, ySize)
             vBuffer.get(nv21, ySize, vSize)
             uBuffer.get(nv21, ySize + vSize, uSize)
@@ -593,8 +515,7 @@ class AttendanceVerificationViewModel(
                 image.height,
                 null
             )
-
-            val out = java.io.ByteArrayOutputStream()
+            val out = ByteArrayOutputStream()
             yuvImage.compressToJpeg(
                 android.graphics.Rect(0, 0, image.width, image.height),
                 100,
@@ -608,9 +529,7 @@ class AttendanceVerificationViewModel(
         }
     }
 
-    fun getFaceQualityScore(): Float {
-        return currentAnalyzer?.getFaceQualityScore() ?: 0.0f
-    }
+    fun getFaceQualityScore(): Float = currentAnalyzer?.getFaceQualityScore() ?: 0.0f
 
     private fun updateImageAnalyzer() {
         if (previewWidth > 0 && previewHeight > 0) {
@@ -618,6 +537,12 @@ class AttendanceVerificationViewModel(
         }
     }
 
+    fun pauseAnalysis() {
+        currentAnalyzer?.pause()
+    }
+    fun resumeAnalysis() {
+        currentAnalyzer?.resume()
+    }
     fun unbindCamera() {
         try {
             cameraProvider?.unbindAll()
@@ -654,9 +579,6 @@ class AttendanceVerificationViewModel(
         lastCaptureTime = 0L
     }
 
-
-    /// marking status
-
     val lastEvent = MutableStateFlow<AttendanceEntity?>(null)
     private val _lastEventReady = MutableStateFlow(false)
     val lastEventReady: StateFlow<Boolean> = _lastEventReady
@@ -665,14 +587,13 @@ class AttendanceVerificationViewModel(
         viewModelScope.launch {
             lastEvent.value = attendanceRepository.getLastEvent(employeeId)
             _lastEventReady.value = true
-
         }
     }
 
     fun markAttendance(
         employeeId: String,
         eventType: AttendanceEventType,
-        matchPercent: Float
+        matchPercent: Float,
     ) {
         viewModelScope.launch {
             val newEntry = AttendanceEntity(
@@ -685,8 +606,6 @@ class AttendanceVerificationViewModel(
             lastEvent.value = newEntry
         }
     }
-
-
 }
 
 // Data classes for attendance results
@@ -694,7 +613,8 @@ data class AttendanceResult(
     val success: Boolean,
     val similarity: Float,
     val message: String,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val matchedEmployeeId: String? = null,
 )
 
 enum class CaptureStatus {

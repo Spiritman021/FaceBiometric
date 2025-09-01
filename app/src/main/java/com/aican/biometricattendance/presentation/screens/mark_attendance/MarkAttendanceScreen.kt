@@ -40,7 +40,6 @@ fun MarkAttendanceScreen(
     if (cameraPermissionState.status.isGranted) {
 
         AttendanceCameraPreview(
-            id = id,
             navController = navController,
             attendanceVerificationViewModel = viewModel,
             onClose = handleClose
