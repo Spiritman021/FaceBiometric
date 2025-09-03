@@ -27,6 +27,7 @@ import com.google.accompanist.permissions.shouldShowRationale
 fun CameraPreviewScreen(
     modifier: Modifier = Modifier,
     viewModel: CameraPreviewViewModel,
+    simplifiedCameraPreviewViewModel: SimplifiedCameraPreviewViewModel,
     id: String,
     handleClose: () -> Unit,
     onNavigateToFaceRegistration: (Uri) -> Unit,
@@ -35,9 +36,16 @@ fun CameraPreviewScreen(
 
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
     if (cameraPermissionState.status.isGranted) {
-        CameraPreviewContent(
-            cameraType = CameraType.REGISTRATION,
-            viewModel = viewModel,
+//        CameraPreviewContent(
+//            cameraType = CameraType.REGISTRATION,
+//            viewModel = viewModel,
+//            id = id,
+//            onNavigateToFaceRegistration = onNavigateToFaceRegistration,
+//            onClose = handleClose
+//        )
+
+        SimplifiedCameraPreviewContent(
+            viewModel = simplifiedCameraPreviewViewModel,
             id = id,
             onNavigateToFaceRegistration = onNavigateToFaceRegistration,
             onClose = handleClose

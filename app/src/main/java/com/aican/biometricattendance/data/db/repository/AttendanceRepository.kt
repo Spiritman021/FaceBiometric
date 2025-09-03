@@ -19,4 +19,10 @@ class AttendanceRepository(private val dao: AttendanceDao) {
 
     suspend fun getUnsyncedCount(): Int = dao.getUnsyncedCount()
 
+    suspend fun markAsSynced(recordIds: List<Int>) = dao.markAsSynced(recordIds)
+
+    suspend fun markAsSynced(recordId: Int) = dao.markAsSynced(recordId)
+
+    suspend fun delete(log: AttendanceEntity) = dao.delete(log)
+
 }

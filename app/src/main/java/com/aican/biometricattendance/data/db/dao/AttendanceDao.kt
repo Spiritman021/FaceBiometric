@@ -2,6 +2,7 @@ package com.aican.biometricattendance.data.db.dao
 
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -28,4 +29,12 @@ interface AttendanceDao {
     @Query("SELECT COUNT(*) FROM attendance_logs WHERE synced = 0")
     suspend fun getUnsyncedCount(): Int
 
+    @Query("UPDATE attendance_logs SET synced = 1 WHERE id IN (:recordIds)")
+    suspend fun markAsSynced(recordIds: List<Int>)
+
+    @Query("UPDATE attendance_logs SET synced = 1 WHERE id = :recordId")
+    suspend fun markAsSynced(recordId: Int)
+
+    @Delete
+    suspend fun delete(log: AttendanceEntity)
 }

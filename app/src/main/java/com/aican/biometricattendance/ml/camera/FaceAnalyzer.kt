@@ -76,14 +76,19 @@ class FaceAnalyzer(
         private const val POSITION_HISTORY_SIZE = 5 // Number of frames to keep in position history
         private const val BOUNDARY_HISTORY_SIZE = 6 // Number of frames to keep in boundary history
 
+        // How many consistent frames for a status to be considered "stable"
+        // How many consistent frames for LIVE_FACE status
+        private const val LIVE_FRAMES_REQUIRED =
+            5
         // BALANCED thresholds for status transitions
         private const val STABLE_FRAMES_REQUIRED =
-            4 // How many consistent frames for a status to be considered "stable"
-        private const val LIVE_FRAMES_REQUIRED =
-            8 // How many consistent frames for LIVE_FACE status
-        private const val MOVEMENT_THRESHOLD_LOW = 0.0003f // Minimum movement for liveness
+            4 // was 8
+
+        // Minimum movement for liveness
         private const val MOVEMENT_THRESHOLD_HIGH =
-            0.004f // Maximum movement to avoid too much motion
+            0.005f // Was 0.004f // Maximum movement to avoid too much motion
+        private const val MOVEMENT_THRESHOLD_LOW = 0.00015f // Was 0.0003f
+
         private const val QUALITY_THRESHOLD = 0.6f // Minimum face quality score
         private const val STABILITY_TIMEOUT_MS =
             2000L // Timeout for CHECKING status to force a decision

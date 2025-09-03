@@ -2,6 +2,8 @@ package com.aican.biometricattendance.presentation.screens.mark_attendance
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Matrix
+import android.os.Environment
 import android.util.Log
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
@@ -29,6 +31,7 @@ import com.aican.biometricattendance.data.models.camera.FaceBox
 import com.aican.biometricattendance.data.models.camera.enums.LivenessStatus
 import com.aican.biometricattendance.ml.camera.FaceAnalyzer
 import com.aican.biometricattendance.ml.facenet.UnifiedFaceEmbeddingProcessor
+import com.aican.biometricattendance.presentation.screens.camera.components.EmbeddingDebugger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -38,6 +41,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.io.File
 import kotlin.math.max
 import kotlin.math.min
 
@@ -157,6 +161,7 @@ class AttendanceVerificationViewModel(
 
             val newPreviewUseCase = Preview.Builder()
                 .setMirrorMode(MIRROR_MODE_OFF)
+                .setTargetAspectRatio(AspectRatio.RATIO_4_3)
                 .build()
                 .apply {
                     setSurfaceProvider { newSurfaceRequest ->
@@ -300,22 +305,36 @@ class AttendanceVerificationViewModel(
                 override fun onCaptureSuccess(image: ImageProxy) {
                     viewModelScope.launch {
                         try {
-                            val bitmap = imageProxyToBitmap(image)
-                            if (bitmap != null) {
-                                processCaptureBitmap(bitmap, faceBox)
-                            } else {
-                                _captureStatus.emit(CaptureStatus.ERROR)
-                                _attendanceResult.emit(
-                                    AttendanceResult(
-                                        success = false,
-                                        similarity = 0.0f,
-                                        message = "Failed to convert image"
-                                    )
-                                )
+                            val rawBitmap = imageProxyToBitmap(image)
+                            if (rawBitmap == null) {
+                                handleCaptureError("Failed to convert image")
+                                return@launch
                             }
+
+                            // Get rotation info from ImageProxy
+                            val rotation = image.imageInfo.rotationDegrees
+                            Log.d(TAG, "Image rotation degrees: $rotation")
+
+                            // Apply rotation correction if needed
+                            val correctedBitmap = if (rotation != 0) {
+                                rotateBitmap(rawBitmap, rotation.toFloat())
+                            } else {
+                                rawBitmap
+                            }
+
+                            // Debug corrected image
+                            EmbeddingDebugger.logImageProcessing(
+                                "ATTENDANCE_CORRECTED",
+                                correctedBitmap,
+                                "Rotation-corrected camera frame"
+                            )
+
+                            // Process the corrected bitmap
+                            processCaptureBitmap(correctedBitmap, faceBox)
+
                         } catch (e: Exception) {
                             Log.e(TAG, "Error processing captured image", e)
-                            _captureStatus.emit(CaptureStatus.ERROR)
+                            handleCaptureError("Processing error: ${e.message}")
                         } finally {
                             image.close()
                         }
@@ -325,29 +344,61 @@ class AttendanceVerificationViewModel(
                 override fun onError(exception: ImageCaptureException) {
                     Log.e(TAG, "Image capture failed", exception)
                     viewModelScope.launch {
-                        _captureStatus.emit(CaptureStatus.ERROR)
-                        _attendanceResult.emit(
-                            AttendanceResult(
-                                success = false,
-                                similarity = 0.0f,
-                                message = "Image capture failed"
-                            )
-                        )
+                        handleCaptureError("Image capture failed")
                     }
                 }
             }
         )
     }
 
+    /**
+     * Rotates a bitmap by the specified degrees with proper memory management
+     */
+    private fun rotateBitmap(source: Bitmap, degrees: Float): Bitmap {
+        if (degrees == 0f) return source
+
+        val matrix = Matrix().apply {
+            postRotate(degrees)
+        }
+
+        val rotatedBitmap = Bitmap.createBitmap(
+            source, 0, 0, source.width, source.height, matrix, true
+        )
+
+        // Recycle original if it's different from the rotated one
+        if (rotatedBitmap != source) {
+            source.recycle()
+        }
+
+        Log.d(TAG, "Rotated image by $degrees degrees: ${source.width}x${source.height} -> ${rotatedBitmap.width}x${rotatedBitmap.height}")
+        return rotatedBitmap
+    }
+
+    /**
+     * Helper to handle capture errors consistently
+     */
+    private suspend fun handleCaptureError(message: String) {
+        _captureStatus.emit(CaptureStatus.ERROR)
+        _attendanceResult.emit(
+            AttendanceResult(
+                success = false,
+                similarity = 0.0f,
+                message = message
+            )
+        )
+    }
     // #################################################################
     // ## CORE 1:N IDENTIFICATION LOGIC IS IMPLEMENTED HERE           ##
     // #################################################################
     private suspend fun processCaptureBitmap(bitmap: Bitmap, faceBox: FaceBox) {
         withContext(Dispatchers.IO) {
             try {
+                EmbeddingDebugger.logImageProcessing("ATTENDANCE_FULL", bitmap, "Full camera frame")
+
                 // Step 1: Crop face from the full image
                 val croppedFace = cropFaceFromBitmap(bitmap, faceBox)
                 if (croppedFace == null) {
+
                     _captureStatus.emit(CaptureStatus.ERROR)
                     _attendanceResult.emit(
                         AttendanceResult(
@@ -356,12 +407,29 @@ class AttendanceVerificationViewModel(
                             message = "Failed to crop face"
                         )
                     )
+
                     return@withContext
                 }
+                EmbeddingDebugger.logImageProcessing(
+                    "ATTENDANCE_CROPPED",
+                    croppedFace,
+                    "Cropped face from camera frame"
+                )
+
+//                saveCroppedFaceForDebugging(croppedFace)
+
 
                 // Step 2: Generate embedding for the live face
                 val processor = faceEmbeddingProcessor!!
                 val embeddingResult = processor.generateEmbedding(croppedFace)
+//                val embeddingResult = processor.generateEmbedding(bitmap) // Full image
+                EmbeddingDebugger.logEmbeddingGeneration(
+                    "ATTENDANCE",
+                    embeddingResult.embedding,
+                    embeddingResult.success,
+                    embeddingResult.error
+                )
+
                 if (!embeddingResult.success || embeddingResult.embedding == null) {
                     _captureStatus.emit(CaptureStatus.ERROR)
                     _attendanceResult.emit(
@@ -397,6 +465,20 @@ class AttendanceVerificationViewModel(
                     if (registeredFace.embedding == null) continue
                     val storedEmbedding = Converters().toFloatArray(registeredFace.embedding)
                     val similarity = processor.calculateSimilarity(liveEmbedding, storedEmbedding)
+
+                    // Debug each comparison
+                    Log.d(
+                        TAG, """
+            🔍 COMPARING WITH ${registeredFace.employeeId}:
+            - Similarity: $similarity
+            - Live embedding first 5: ${
+                            liveEmbedding.take(5).joinToString(", ") { "%.4f".format(it) }
+                        }
+            - Stored embedding first 5: ${
+                            storedEmbedding.take(5).joinToString(", ") { "%.4f".format(it) }
+                        }
+        """.trimIndent()
+                    )
 
                     if (similarity > highestSimilarity) {
                         highestSimilarity = similarity
@@ -446,6 +528,24 @@ class AttendanceVerificationViewModel(
                     )
                 )
             }
+        }
+    }
+
+    private fun saveCroppedFaceForDebugging(croppedFace: Bitmap) {
+        try {
+            val debugDir = File(Environment.getExternalStorageDirectory(), "AttendanceDebug")
+            if (!debugDir.exists()) debugDir.mkdirs()
+
+            val debugFile = File(debugDir, "cropped_face_${System.currentTimeMillis()}.jpg")
+            debugFile.outputStream().use { outputStream ->
+                croppedFace.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
+            }
+
+            Log.d(TAG, "🔍 DEBUG: Cropped face saved to ${debugFile.absolutePath}")
+            Log.d(TAG, "🔍 Check this image to verify it contains the correct face!")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save debug image", e)
         }
     }
 
@@ -540,9 +640,11 @@ class AttendanceVerificationViewModel(
     fun pauseAnalysis() {
         currentAnalyzer?.pause()
     }
+
     fun resumeAnalysis() {
         currentAnalyzer?.resume()
     }
+
     fun unbindCamera() {
         try {
             cameraProvider?.unbindAll()
@@ -589,6 +691,19 @@ class AttendanceVerificationViewModel(
             _lastEventReady.value = true
         }
     }
+
+    // #################################################
+    // ## NEW: State and functions for daily log check ##
+    // #################################################
+    private val _todayLogs = MutableStateFlow<List<AttendanceEntity>>(emptyList())
+    val todayLogs: StateFlow<List<AttendanceEntity>> = _todayLogs.asStateFlow()
+
+    fun fetchTodayLogs(employeeId: String) {
+        viewModelScope.launch {
+            _todayLogs.value = attendanceRepository.getTodayLogs(employeeId)
+        }
+    }
+
 
     fun markAttendance(
         employeeId: String,

@@ -16,6 +16,7 @@ import com.aican.biometricattendance.presentation.screens.accounts.AccountViewMo
 import com.aican.biometricattendance.presentation.screens.attendance_dashboard.FaceAttendanceScreen
 import com.aican.biometricattendance.presentation.screens.camera.CameraPreviewScreen
 import com.aican.biometricattendance.presentation.screens.camera.CameraPreviewViewModel
+import com.aican.biometricattendance.presentation.screens.camera.SimplifiedCameraPreviewViewModel
 import com.aican.biometricattendance.presentation.screens.face_registration.CheckEmployeeScreen
 import com.aican.biometricattendance.presentation.screens.face_registration.FaceImagePickerScreen
 import com.aican.biometricattendance.presentation.screens.face_registration.FaceRegistrationScreen
@@ -123,6 +124,7 @@ fun GlobalNavigationHost(
 
 
             val cameraPreviewViewModel: CameraPreviewViewModel = koinViewModel()
+            val simplifiedCameraPreviewViewModel: SimplifiedCameraPreviewViewModel = koinViewModel()
 
 //
 //            LaunchedEffect(Unit) {
@@ -131,6 +133,7 @@ fun GlobalNavigationHost(
 
             CameraPreviewScreen(
                 viewModel = cameraPreviewViewModel,
+                simplifiedCameraPreviewViewModel = simplifiedCameraPreviewViewModel,
                 id = id,
                 onNavigateToFaceRegistration = { uri ->
 

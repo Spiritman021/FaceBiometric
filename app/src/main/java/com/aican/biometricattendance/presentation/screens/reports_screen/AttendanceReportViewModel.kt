@@ -1,5 +1,6 @@
 package com.aican.biometricattendance.presentation.screens.reports_screen
 
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -9,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aican.biometricattendance.data.db.entity.AttendanceEntity
 import com.aican.biometricattendance.data.db.repository.AttendanceRepository
+import com.aican.biometricattendance.data.network.repository.AttendanceSyncRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -20,21 +22,51 @@ import kotlin.math.min
 
 class AttendanceReportViewModel(
     private val repository: AttendanceRepository,
+    private val syncRepository: AttendanceSyncRepository // Add this dependency
 ) : ViewModel() {
+
+    companion object {
+        private const val TAG = "AttendanceReportVM"
+    }
 
     private val _attendanceLogs = mutableStateListOf<AttendanceEntity>()
     val attendanceLogs: List<AttendanceEntity> = _attendanceLogs
 
     var isSyncing by mutableStateOf(false)
         private set
-    var syncProgress by mutableIntStateOf(0)        // 0..100
+    var syncProgress by mutableIntStateOf(0)
         private set
     var syncMessage by mutableStateOf<String?>(null)
         private set
     var syncError by mutableStateOf<String?>(null)
         private set
+    var unsyncedCount by mutableIntStateOf(0)
+        private set
 
-    fun syncAttendance(batchSize: Int = 100) {
+    init {
+        fetchAllAttendanceLogs()
+    }
+
+    fun deleteLog(log: AttendanceEntity) {
+        viewModelScope.launch {
+            try {
+                repository.delete(log)
+                // Update the UI list efficiently without a full refresh
+                _attendanceLogs.remove(log)
+                // If the deleted log was unsynced, update the count
+                if (!log.synced) {
+                    fetchUnsyncedCount()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error deleting log with id ${log.id}", e)
+                // Optionally, you can set an error state to show a message to the user
+                syncError = "Failed to delete record."
+            }
+        }
+    }
+
+
+    fun syncAttendance() {
         if (isSyncing) return
 
         viewModelScope.launch {
@@ -43,87 +75,69 @@ class AttendanceReportViewModel(
             syncMessage = null
             syncError = null
 
-            // 1) Load all unsynced (no LIMIT)
-            val unsynced = withContext(Dispatchers.IO) { repository.getUnsynced() }
-            val total = unsynced.size
-            if (total == 0) {
-                syncMessage = "All records are already synced."
+            try {
+                val result = syncRepository.syncAllAttendanceRecords { current, total, message ->
+                    val progressPercent = if (total > 0) ((current.toFloat() / total) * 100).toInt() else 0
+                    syncProgress = progressPercent.coerceIn(0, 100)
+                    syncMessage = message
+                }
+
+                // Handle results
+                when {
+                    result.totalRecords == 0 -> {
+                        syncMessage = "No records to sync"
+                    }
+                    result.successCount == result.totalRecords -> {
+                        syncMessage = "All ${result.successCount} records synced successfully!"
+                        syncError = null
+                    }
+                    result.successCount > 0 -> {
+                        syncMessage = "Partially synced: ${result.successCount}/${result.totalRecords} records"
+                        syncError = if (result.errors.isNotEmpty()) {
+                            "Errors: ${result.errors.take(2).joinToString("; ")}"
+                        } else null
+                    }
+                    else -> {
+                        syncMessage = null
+                        syncError = "Sync failed: ${result.errors.firstOrNull() ?: "Unknown error"}"
+                    }
+                }
+
+                Log.d(TAG, "Sync completed - Success: ${result.successCount}, Failed: ${result.failureCount}")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Sync failed", e)
+                syncError = "Sync failed: ${e.message}"
+                syncMessage = null
+            } finally {
                 isSyncing = false
+                syncProgress = 100
+                // Refresh the UI data
                 fetchAllAttendanceLogs()
-                return@launch
             }
-
-            val safeBatch = max(1, batchSize)
-            val totalBatches = ceil(total / safeBatch.toDouble()).toInt()
-            var processed = 0
-            var failedTotal = 0
-
-            // 2) Iterate batches
-            for (batchIndex in 0 until totalBatches) {
-                val from = batchIndex * safeBatch
-                val to = min(from + safeBatch, total)
-                val batch = unsynced.subList(from, to)
-
-                // Optional: small delay to make progress visible / avoid UI jank
-                // delay(100)
-
-                // 3) Upload this batch
-                val result = withContext(Dispatchers.IO) {
-                    // If you don't have a backend yet, you can simulate:
-                    delay(300)
-                    // SyncResult(syncedIds = batch.map { it.id }, failed = emptyMap())
-                }
-
-
-                processed += batch.size
-
-                // 5) Update progress & status
-                val pct = ((processed / total.toFloat()) * 100).toInt().coerceIn(0, 100)
-                syncProgress = pct
-                syncMessage = buildString {
-                    append("Syncing ")
-                    append(processed)
-                    append("/")
-                    append(total)
-                    append(" (")
-                    append(pct)
-                    append("%)")
-
-                }
-            }
-
-            // 6) Done
-            isSyncing = false
-            if (failedTotal == 0) {
-                syncMessage = "Sync completed successfully."
-            } else {
-                syncError = "Sync completed with $failedTotal failure(s)."
-            }
-
-            // 7) Refresh UI lists and counts
-            fetchAllAttendanceLogs()
         }
     }
-
-    var unsyncedCount by mutableIntStateOf(0)
-        private set
 
     fun fetchUnsyncedCount() {
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.getUnsyncedCount() }
-                .onSuccess { count ->
-                    withContext(Dispatchers.Main) { unsyncedCount = count }
-                }
+        viewModelScope.launch {
+            try {
+                unsyncedCount = repository.getUnsyncedCount()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching unsynced count", e)
+            }
         }
     }
-
 
     fun fetchAllAttendanceLogs() {
         viewModelScope.launch {
-            val logs = repository.getAllAttendanceLogs()
-            _attendanceLogs.clear()
-            _attendanceLogs.addAll(logs)
-            fetchUnsyncedCount()
+            try {
+                val logs = repository.getAllAttendanceLogs()
+                _attendanceLogs.clear()
+                _attendanceLogs.addAll(logs)
+                fetchUnsyncedCount()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching attendance logs", e)
+            }
         }
     }
 }

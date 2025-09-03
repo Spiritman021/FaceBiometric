@@ -33,6 +33,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.unit.Dp
+import com.aican.biometricattendance.presentation.screens.camera.components.CoordinateDebugger
 
 /**
  * A static overlay that draws a centered oval guide for the user to position their face in.
@@ -49,6 +50,10 @@ fun FacePositioningGuide(
     Canvas(modifier = modifier) {
         val canvasWidth = size.width
         val canvasHeight = size.height
+
+        // Debug oval info
+        CoordinateDebugger.logOvalGuideInfo(canvasWidth, canvasHeight)
+
 
         // Define the oval's size and position (centered)
         val ovalWidth = canvasWidth * 0.75f

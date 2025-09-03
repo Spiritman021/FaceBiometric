@@ -179,6 +179,16 @@ fun AttendanceCameraPreview(
             }
 
             // ## CHANGE 4: Update the instructional text ##
+
+            Text(
+                text = "Align your face in oval face area, and blink your eyes",
+                style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .padding(4.dp)
+                    .fillMaxWidth()
+            )
+
             Text(
                 text = "Searching for a registered face...",
                 style = MaterialTheme.typography.titleMedium,

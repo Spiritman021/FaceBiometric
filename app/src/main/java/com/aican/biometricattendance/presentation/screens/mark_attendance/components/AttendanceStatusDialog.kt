@@ -4,25 +4,22 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -34,7 +31,6 @@ import com.aican.biometricattendance.presentation.screens.mark_attendance.Attend
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AttendanceStatusDialog(
     employeeId: String,
@@ -42,32 +38,27 @@ fun AttendanceStatusDialog(
     viewModel: AttendanceVerificationViewModel,
     onDismiss: () -> Unit,
 ) {
-    val lastEventState by viewModel.lastEvent.collectAsState()
-    LaunchedEffect(employeeId) { viewModel.fetchLastEvent(employeeId) }
+    val todayLogs by viewModel.todayLogs.collectAsState()
+    LaunchedEffect(employeeId) {
+        viewModel.fetchTodayLogs(employeeId)
+    }
 
-    val lastEventType = lastEventState?.eventType
-    val lastEventTime = lastEventState?.timestamp ?: 0L
-    val isCheckedIn = lastEventType == AttendanceEventType.CHECK_IN
-    val nextEventType =
-        if (isCheckedIn) AttendanceEventType.CHECK_OUT else AttendanceEventType.CHECK_IN
-    val lastEventReady by viewModel.lastEventReady.collectAsState(initial = false)
+    val lastEventOfToday = remember(todayLogs) {
+        todayLogs.maxByOrNull { it.timestamp }
+    }
+
+    val hasCheckedInToday = remember(todayLogs) {
+        todayLogs.any { it.eventType == AttendanceEventType.CHECK_IN }
+    }
+    val hasCheckedOutToday = remember(todayLogs) {
+        todayLogs.any { it.eventType == AttendanceEventType.CHECK_OUT }
+    }
 
     val resultMsg = remember { mutableStateOf<String?>(null) }
     val isSaving = remember { mutableStateOf(false) }
-    val hasAutoTriggered = remember(employeeId) { mutableStateOf(false) }
+    var selectedEventType by remember { mutableStateOf<AttendanceEventType?>(null) }
 
-    LaunchedEffect(lastEventReady) {
-        if (!lastEventReady || hasAutoTriggered.value) return@LaunchedEffect
-        hasAutoTriggered.value = true
-
-        isSaving.value = true
-        viewModel.markAttendance(employeeId, nextEventType, matchPercent)
-        val whenStr = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
-        resultMsg.value =
-            (if (nextEventType == AttendanceEventType.CHECK_IN) "Checked In" else "Checked Out") +
-                    " successfully at $whenStr"
-        isSaving.value = false
-    }
+    var showCheckoutConfirmDialog by remember { mutableStateOf(false) }
 
     val employeeData by remember(employeeId) {
         derivedStateOf {
@@ -76,7 +67,7 @@ fun AttendanceStatusDialog(
     }
 
     Dialog(
-        onDismissRequest = { /* Controlled by button */ },
+        onDismissRequest = { /* Controlled via buttons */ },
         properties = DialogProperties(
             dismissOnBackPress = false,
             dismissOnClickOutside = false,
@@ -106,7 +97,7 @@ fun AttendanceStatusDialog(
                             userName = employeeData!!.name,
                             employeeId = employeeData!!.employeeId,
                             matchPercent = matchPercent,
-                            nextEventType = nextEventType,
+                            selectedEventType = selectedEventType!!,
                             resultMsg = resultMsg.value!!,
                             onClose = onDismiss
                         )
@@ -115,9 +106,23 @@ fun AttendanceStatusDialog(
                             userName = employeeData!!.name,
                             employeeId = employeeData!!.employeeId,
                             matchPercent = matchPercent,
-                            lastEventType = lastEventType,
-                            lastEventTime = lastEventTime,
-                            isSaving = isSaving.value
+                            lastEventTime = lastEventOfToday?.timestamp ?: 0L,
+                            lastEventType = lastEventOfToday?.eventType,
+                            isSaving = isSaving.value,
+                            hasCheckedInToday = hasCheckedInToday,
+                            hasCheckedOutToday = hasCheckedOutToday,
+                            onCheckIn = {
+                                isSaving.value = true
+                                selectedEventType = AttendanceEventType.CHECK_IN
+                                viewModel.markAttendance(employeeId, AttendanceEventType.CHECK_IN, matchPercent)
+                                val whenStr = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+                                resultMsg.value = "Checked In successfully at $whenStr"
+                                isSaving.value = false
+                            },
+                            onInitiateCheckout = {
+                                showCheckoutConfirmDialog = true
+                            },
+                            onDismiss = onDismiss
                         )
                     }
                 }
@@ -125,8 +130,52 @@ fun AttendanceStatusDialog(
                 LoadingCard()
             }
         }
+
+        if (showCheckoutConfirmDialog) {
+            CheckoutConfirmationDialog(
+                onConfirm = {
+                    showCheckoutConfirmDialog = false
+                    isSaving.value = true
+                    selectedEventType = AttendanceEventType.CHECK_OUT
+                    viewModel.markAttendance(employeeId, AttendanceEventType.CHECK_OUT, matchPercent)
+                    val whenStr = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+                    resultMsg.value = "Checked Out successfully at $whenStr"
+                    isSaving.value = false
+                },
+                onDismiss = {
+                    showCheckoutConfirmDialog = false
+                }
+            )
+        }
     }
 }
+
+@Composable
+private fun CheckoutConfirmationDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Final Checkout?", fontWeight = FontWeight.Bold) },
+        text = { Text("This will be your final action for the day. You will not be able to check in or out again today. Are you sure you want to proceed?") },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Text("Confirm Checkout")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+        shape = RoundedCornerShape(24.dp)
+    )
+}
+
 
 @Composable
 private fun LoadingCard() {
@@ -168,21 +217,18 @@ private fun ProcessingStatusUI(
     lastEventType: AttendanceEventType?,
     lastEventTime: Long,
     isSaving: Boolean,
+    hasCheckedInToday: Boolean,
+    hasCheckedOutToday: Boolean,
+    onCheckIn: () -> Unit,
+    onInitiateCheckout: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
     val formattedLastTime = remember(lastEventTime) {
         if (lastEventTime == 0L) "No record for today"
         else SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(lastEventTime))
     }
 
-    val pulseAnimation by rememberInfiniteTransition(label = "pulse").animateFloat(
-        initialValue = 1f,
-        targetValue = 1.05f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse_scale"
-    )
+    val attendanceCompleted = hasCheckedInToday && hasCheckedOutToday
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -194,140 +240,146 @@ private fun ProcessingStatusUI(
             modifier = Modifier.padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header with biometric icon
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                            )
-                        ),
-                        shape = CircleShape
-                    )
-                    .scale(if (isSaving) pulseAnimation else 1f),
-                contentAlignment = Alignment.Center
-            ) {
+            // Header Icon and Text
+            if (attendanceCompleted) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = "Completed",
+                    tint = Color(0xFF4CAF50),
+                    modifier = Modifier.size(64.dp)
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Attendance Complete",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "You have already checked in and out for today.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            } else {
                 Icon(
                     imageVector = Icons.Filled.Fingerprint,
                     contentDescription = "Biometric",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(64.dp)
+                )
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Identity Verified",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Choose an attendance action below.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
                 )
             }
 
+            Spacer(Modifier.height(32.dp))
+
+            // Employee Info Card (always visible)
+            EmployeeInfoCard(userName, employeeId, matchPercent, lastEventType, formattedLastTime)
+
             Spacer(Modifier.height(24.dp))
 
-            Text(
-                "Identity Verification",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            Text(
-                "Biometric authentication successful",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(Modifier.height(32.dp))
-
-            // Employee Info Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+            // Action Buttons or Close Button
+            if (attendanceCompleted) {
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp)
                 ) {
-                    // User Info Row
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        UserAvatar(userName = userName)
-                        Spacer(Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                userName,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                employeeId,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        EnhancedMatchBadge(matchPercent)
-                    }
-
-                    Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-
-                    // Last Activity Info
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.AccessTime,
-                            contentDescription = "Last activity",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Column {
-                            Text(
-                                "Last Activity",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = lastEventType?.name?.replace('_', ' ')?.lowercase()
-                                    ?.replaceFirstChar { it.uppercase() }
-                                    ?.plus(" at $formattedLastTime")
-                                    ?: "No previous record",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
+                    Text("Close")
                 }
+            } else {
+                ActionButtons(
+                    isSaving = isSaving,
+                    canCheckIn = !hasCheckedInToday,
+                    canCheckOut = hasCheckedInToday && !hasCheckedOutToday,
+                    onCheckIn = onCheckIn,
+                    onInitiateCheckout = onInitiateCheckout,
+                    onDismiss = onDismiss
+                )
             }
+        }
+    }
+}
 
-            Spacer(Modifier.height(32.dp))
-
-            // Processing Status
-            AnimatedVisibility(
-                visible = isSaving,
-                enter = fadeIn() + scaleIn(),
-                exit = fadeOut() + scaleOut()
+@Composable
+private fun EmployeeInfoCard(
+    userName: String,
+    employeeId: String,
+    matchPercent: Float,
+    lastEventType: AttendanceEventType?,
+    formattedLastTime: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        shape = RoundedCornerShape(20.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(32.dp),
-                        strokeWidth = 3.dp,
-                        color = MaterialTheme.colorScheme.primary
+                UserAvatar(userName = userName)
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        userName,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        "Processing attendance...",
+                        employeeId,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Medium
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                EnhancedMatchBadge(matchPercent)
+            }
+            Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.AccessTime,
+                    contentDescription = "Last activity",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+                Column {
+                    Text(
+                        "Last Activity Today",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = lastEventType?.name?.replace('_', ' ')?.lowercase()
+                            ?.replaceFirstChar { it.uppercase() }
+                            ?.plus(" at $formattedLastTime")
+                            ?: "No previous record today",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -336,11 +388,62 @@ private fun ProcessingStatusUI(
 }
 
 @Composable
+private fun ActionButtons(
+    isSaving: Boolean,
+    canCheckIn: Boolean,
+    canCheckOut: Boolean,
+    onCheckIn: () -> Unit,
+    onInitiateCheckout: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Button(
+                onClick = onCheckIn,
+                enabled = canCheckIn && !isSaving,
+                modifier = Modifier.weight(1f).height(52.dp),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(Icons.Filled.Schedule, "Check In", modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Check In")
+            }
+            OutlinedButton(
+                onClick = onInitiateCheckout,
+                enabled = canCheckOut && !isSaving,
+                modifier = Modifier.weight(1f).height(52.dp),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(Icons.Outlined.AccessTime, "Check Out", modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Check Out")
+            }
+        }
+        TextButton(onClick = onDismiss, enabled = !isSaving) {
+            Text("Dismiss")
+        }
+        AnimatedVisibility(visible = isSaving) {
+            CircularProgressIndicator(
+                modifier = Modifier.padding(top = 8.dp).size(32.dp),
+                strokeWidth = 3.dp
+            )
+        }
+    }
+}
+
+
+@Composable
 private fun SuccessStatusUI(
     userName: String,
     employeeId: String,
     matchPercent: Float,
-    nextEventType: AttendanceEventType,
+    selectedEventType: AttendanceEventType,
     resultMsg: String,
     onClose: () -> Unit,
 ) {
@@ -363,7 +466,6 @@ private fun SuccessStatusUI(
             modifier = Modifier.padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Success Animation
             Box(
                 modifier = Modifier
                     .size(96.dp)
@@ -390,7 +492,7 @@ private fun SuccessStatusUI(
             Spacer(Modifier.height(24.dp))
 
             Text(
-                "Attendance Marked Successfully!",
+                "Attendance Marked!",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -409,11 +511,10 @@ private fun SuccessStatusUI(
 
             Spacer(Modifier.height(32.dp))
 
-            // Employee Summary Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (nextEventType == AttendanceEventType.CHECK_IN) {
+                    containerColor = if (selectedEventType == AttendanceEventType.CHECK_IN) {
                         Color(0xFF4CAF50).copy(alpha = 0.1f)
                     } else {
                         Color(0xFFFF9800).copy(alpha = 0.1f)
@@ -422,7 +523,7 @@ private fun SuccessStatusUI(
                 shape = RoundedCornerShape(20.dp),
                 border = BorderStroke(
                     1.dp,
-                    if (nextEventType == AttendanceEventType.CHECK_IN) {
+                    if (selectedEventType == AttendanceEventType.CHECK_IN) {
                         Color(0xFF4CAF50).copy(alpha = 0.3f)
                     } else {
                         Color(0xFFFF9800).copy(alpha = 0.3f)
@@ -457,19 +558,18 @@ private fun SuccessStatusUI(
 
                     Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
-                    // Action Badge
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Icon(
-                            imageVector = if (nextEventType == AttendanceEventType.CHECK_IN) {
-                                Icons.Default.Schedule
+                            imageVector = if (selectedEventType == AttendanceEventType.CHECK_IN) {
+                                Icons.Filled.Schedule
                             } else {
                                 Icons.Outlined.AccessTime
                             },
                             contentDescription = "Action type",
-                            tint = if (nextEventType == AttendanceEventType.CHECK_IN) {
+                            tint = if (selectedEventType == AttendanceEventType.CHECK_IN) {
                                 Color(0xFF4CAF50)
                             } else {
                                 Color(0xFFFF9800)
@@ -477,10 +577,10 @@ private fun SuccessStatusUI(
                             modifier = Modifier.size(24.dp)
                         )
                         Text(
-                            text = if (nextEventType == AttendanceEventType.CHECK_IN) "CHECKED IN" else "CHECKED OUT",
+                            text = if (selectedEventType == AttendanceEventType.CHECK_IN) "CHECKED IN" else "CHECKED OUT",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = if (nextEventType == AttendanceEventType.CHECK_IN) {
+                            color = if (selectedEventType == AttendanceEventType.CHECK_IN) {
                                 Color(0xFF4CAF50)
                             } else {
                                 Color(0xFFFF9800)
@@ -492,18 +592,12 @@ private fun SuccessStatusUI(
 
             Spacer(Modifier.height(32.dp))
 
-            // Action Button
             Button(
                 onClick = onClose,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
                 shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp)
             ) {
                 Text(
                     "Complete",

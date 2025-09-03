@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -22,6 +25,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -31,9 +35,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.aican.biometricattendance.presentation.theme.AttendanceTheme.Divider
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -68,114 +72,139 @@ fun AttendanceReportScreen(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-
             Text(
                 "Total Records: ${logs.size}",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                modifier = Modifier.padding(bottom = 12.dp)
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 8.dp)
             )
+
             if (viewModel.unsyncedCount > 0) {
-                Text(
-                    "${viewModel.unsyncedCount} pending sync",
-                    fontSize = 12.sp,
-                    color = Color(0xFFFF8A65),
-                    modifier = Modifier.padding(bottom = 1.dp)
-
-                )
-                Spacer(Modifier.height(1.dp))
-                Button(
-                    onClick = { viewModel.syncAttendance() },
-                    enabled = !isSyncing && viewModel.unsyncedCount > 0,
-                    modifier = Modifier.align(Alignment.Start)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Sync")
+                    Text(
+                        "${viewModel.unsyncedCount} records pending sync",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Button(
+                        onClick = { viewModel.syncAttendance() },
+                        enabled = !isSyncing && viewModel.unsyncedCount > 0
+                    ) {
+                        Text("Sync Now")
+                    }
                 }
-                Spacer(Modifier.height(8.dp))
-
+                Spacer(Modifier.height(12.dp))
             }
 
-            // Inline sync status UI
             if (isSyncing) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF102A43))
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
                 ) {
                     Column(Modifier.padding(12.dp)) {
                         Text(
                             syncMessage ?: "Syncing…",
-                            color = Color(0xFFB3E5FC),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
                             fontWeight = FontWeight.SemiBold
                         )
                         Spacer(Modifier.height(8.dp))
                         LinearProgressIndicator(
-                            progress = syncProgress / 100f, modifier = Modifier.fillMaxWidth()
+                            progress = { syncProgress / 100f },
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }
                 Spacer(Modifier.height(12.dp))
             } else {
-                // Show last message or error if any
                 syncMessage?.let {
                     Text(it, color = Color(0xFF00C853), fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
                 }
                 syncError?.let {
-                    Text(it, color = Color(0xFFFF5252), fontSize = 13.sp)
+                    Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
                 }
             }
-
-            Text(
-                "Total Records: ${logs.size}",
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-
 
             if (logs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("No attendance records available.")
                 }
             } else {
-                // Table Header
+                // ## Table Header - UPDATED ##
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFFE0E0E0))
-                        .padding(vertical = 8.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Emp ID", Modifier.weight(1f), fontWeight = FontWeight.Bold)
                     Text("Type", Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                    Text("Time", Modifier.weight(1.5f), fontWeight = FontWeight.Bold)
-                    Text("%", Modifier.weight(0.7f), fontWeight = FontWeight.Bold)
+                    Text("Time", Modifier.weight(2f), fontWeight = FontWeight.Bold)
+                    Text("%", Modifier.weight(0.6f), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                    Text("Sync", Modifier.weight(0.5f), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                    Text("Del", Modifier.weight(0.5f), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                 }
 
-                Spacer(Modifier.height(4.dp))
+                Divider()
 
                 LazyColumn {
-                    items(logs) { log ->
+                    items(logs, key = { it.id }) { log ->
+                        // ## Table Row - UPDATED ##
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp)
-                                .background(Color(0xFFF9F9F9))
+                                .padding(horizontal = 8.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(log.employeeId, Modifier.weight(1f))
+                            Text(log.employeeId, Modifier.weight(1f), fontSize = 14.sp)
                             Text(
-                                log.eventType.name.replace("_", " ").capitalize(Locale.ROOT),
-                                Modifier.weight(1f)
+                                log.eventType.name
+                                    .replace('_', ' ')
+                                    .lowercase()
+                                    .replaceFirstChar { it.titlecase(Locale.getDefault()) },
+                                Modifier.weight(1f),
+                                fontSize = 14.sp
                             )
                             Text(
-                                SimpleDateFormat(
-                                    "dd MMM yyyy, hh:mm a",
-                                    Locale.getDefault()
-                                ).format(Date(log.timestamp)), Modifier.weight(1.5f)
+                                SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
+                                    .format(Date(log.timestamp)),
+                                Modifier.weight(2f),
+                                fontSize = 13.sp
                             )
-                            Text("%.2f".format(log.matchPercent), Modifier.weight(0.7f))
+                            Text(
+                                (log.matchPercent * 100).toInt().toString(),
+                                Modifier.weight(0.6f),
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            // Sync Status Icon
+                            Box(Modifier.weight(0.5f), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (log.synced) Icons.Default.CheckCircle else Icons.Default.CloudUpload,
+                                    contentDescription = if (log.synced) "Synced" else "Not Synced",
+                                    tint = if (log.synced) Color(0xFF4CAF50) else Color.Gray,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            // Delete Button
+                            Box(Modifier.weight(0.5f), contentAlignment = Alignment.Center) {
+                                IconButton(
+                                    onClick = { viewModel.deleteLog(log) },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete Log",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
                         }
-
                         Divider()
                     }
                 }
