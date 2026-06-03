@@ -21,6 +21,7 @@ import com.aican.biometricattendance.presentation.screens.face_registration.Face
 import com.aican.biometricattendance.presentation.screens.mark_attendance.AttendanceVerificationViewModel
 import com.aican.biometricattendance.presentation.screens.mark_attendance.MarkAttendanceScreen
 import com.aican.biometricattendance.presentation.screens.mark_attendance.MarkStatusScreen
+import com.aican.biometricattendance.presentation.screens.mark_attendance.NewAttendanceCameraViewModel
 import com.aican.biometricattendance.presentation.screens.registered_user.RegisteredUsersScreen
 import com.aican.biometricattendance.presentation.screens.registered_user.RegisteredUsersViewModel
 import com.aican.biometricattendance.presentation.screens.reports_screen.AttendanceReportScreen
@@ -115,7 +116,7 @@ fun GlobalNavigationHost(
 
 
         ) { backStackEntry ->
-            val attendanceVerificationViewModel: AttendanceVerificationViewModel = koinViewModel()
+            val attendanceVerificationViewModel: NewAttendanceCameraViewModel = koinViewModel()
             val id = backStackEntry.arguments?.getString("id") ?: ""
 
 

@@ -38,28 +38,42 @@ class FaceAnalyzer(
     private val previewWidth: Float,
     private val previewHeight: Float,
     private val isMirrored: Boolean = false,
-    private val onFacesDetected: (List<FaceBox>) -> Unit
+    private val onAnalyzedFrame: (boxes: List<FaceBox>, faceBitmap160: android.graphics.Bitmap?, liveness: LivenessStatus, quality: Float) -> Unit,
 ) : ImageAnalysis.Analyzer {
 
-    private var faceLandmarkerHelper: FaceLandmarkerHelper? = null // Helper for MediaPipe FaceLandmarker
+    @Volatile
+    private var lastRgbFrame: android.graphics.Bitmap? = null
+
+    @Volatile
+    private var lastRotation: Int = 0
+
+
+    private var faceLandmarkerHelper: FaceLandmarkerHelper? =
+        null // Helper for MediaPipe FaceLandmarker
     private var frameCount = 0 // Counter for analyzed frames
     private var isInitialized = false // Flag indicating if MediaPipe helper is initialized
 
     // --- Liveness Stability System ---
     // These variables help in smoothing out liveness status changes to avoid flickering.
-    private var currentLivenessStatus = LivenessStatus.NO_FACE // The currently reported stable liveness status
-    private var stableStatusCount = 0 // Counter for how many consecutive frames a status has been observed
-    private var lastStableStatus = LivenessStatus.NO_FACE // The status that is currently being counted for stability
+    private var currentLivenessStatus =
+        LivenessStatus.NO_FACE // The currently reported stable liveness status
+    private var stableStatusCount =
+        0 // Counter for how many consecutive frames a status has been observed
+    private var lastStableStatus =
+        LivenessStatus.NO_FACE // The status that is currently being counted for stability
     private var liveFrameCount = 0 // Counter for consecutive LIVE_FACE frames
 
     // --- History Tracking for Analysis ---
-    private var landmarkHistory = mutableListOf<LandmarkFrame>() // History of detected face landmarks
+    private var landmarkHistory =
+        mutableListOf<LandmarkFrame>() // History of detected face landmarks
     private var faceQualityHistory = mutableListOf<Float>() // History of face quality scores
     private var positionHistory = mutableListOf<FacePosition>() // History of face positions
-    private var boundaryHistory = mutableListOf<Boolean>() // New: History of whether the face was completely in frame
+    private var boundaryHistory =
+        mutableListOf<Boolean>() // New: History of whether the face was completely in frame
 
     private var stabilityJob: Job? = null // Job for handling stability timeouts
-    private val coroutineScope = CoroutineScope(Dispatchers.Default) // Coroutine scope for background tasks
+    private val coroutineScope =
+        CoroutineScope(Dispatchers.Default) // Coroutine scope for background tasks
 
     companion object {
         private const val TAG = "FaceAnalyzer"
@@ -70,23 +84,32 @@ class FaceAnalyzer(
         private const val BOUNDARY_HISTORY_SIZE = 6 // Number of frames to keep in boundary history
 
         // BALANCED thresholds for status transitions
-        private const val STABLE_FRAMES_REQUIRED = 4 // How many consistent frames for a status to be considered "stable"
-        private const val LIVE_FRAMES_REQUIRED = 8 // How many consistent frames for LIVE_FACE status
+        private const val STABLE_FRAMES_REQUIRED =
+            4 // How many consistent frames for a status to be considered "stable"
+        private const val LIVE_FRAMES_REQUIRED =
+            8 // How many consistent frames for LIVE_FACE status
         private const val MOVEMENT_THRESHOLD_LOW = 0.0003f // Minimum movement for liveness
-        private const val MOVEMENT_THRESHOLD_HIGH = 0.004f // Maximum movement to avoid too much motion
+        private const val MOVEMENT_THRESHOLD_HIGH =
+            0.004f // Maximum movement to avoid too much motion
         private const val QUALITY_THRESHOLD = 0.6f // Minimum face quality score
-        private const val STABILITY_TIMEOUT_MS = 2000L // Timeout for CHECKING status to force a decision
+        private const val STABILITY_TIMEOUT_MS =
+            2000L // Timeout for CHECKING status to force a decision
 
         // More lenient position validation parameters
-        private const val MIN_FACE_SIZE_RATIO = 0.05f // Minimum acceptable face size relative to image
-        private const val MAX_FACE_SIZE_RATIO = 0.8f // Maximum acceptable face size relative to image
+        private const val MIN_FACE_SIZE_RATIO =
+            0.05f // Minimum acceptable face size relative to image
+        private const val MAX_FACE_SIZE_RATIO =
+            0.8f // Maximum acceptable face size relative to image
         private const val CENTER_TOLERANCE = 0.35f // Tolerance for face being off-center
-        private const val POSITION_STABILITY_FRAMES = 3 // Frames needed for position stability (not explicitly used in updateLivenessStatusBalanced)
+        private const val POSITION_STABILITY_FRAMES =
+            3 // Frames needed for position stability (not explicitly used in updateLivenessStatusBalanced)
 
         // NEW: Boundary validation parameters
-        private const val BOUNDARY_MARGIN = 0.05f // 5% margin from screen edges for face to stay within
+        private const val BOUNDARY_MARGIN =
+            0.05f // 5% margin from screen edges for face to stay within
         private const val FACE_COMPLETENESS_THRESHOLD = 0.95f // 95% of face must be visible
-        private const val BOUNDARY_STABILITY_FRAMES = 4 // Face must be within bounds for this many frames consistently
+        private const val BOUNDARY_STABILITY_FRAMES =
+            4 // Face must be within bounds for this many frames consistently
     }
 
     init {
@@ -101,29 +124,29 @@ class FaceAnalyzer(
         try {
             faceLandmarkerHelper = FaceLandmarkerHelper(
                 context = context,
-                runningMode = RunningMode.LIVE_STREAM, // Optimized for real-time video streams
+                runningMode = RunningMode.LIVE_STREAM,
                 minFaceDetectionConfidence = 0.5f,
                 minFaceTrackingConfidence = 0.5f,
                 minFacePresenceConfidence = 0.5f,
-                maxNumFaces = 1, // Only detect one face
-                currentDelegate = FaceLandmarkerHelper.DELEGATE_CPU, // Use CPU delegate (GPU can be an option)
+                maxNumFaces = 1,
+                currentDelegate = FaceLandmarkerHelper.DELEGATE_CPU,
                 faceLandmarkerHelperListener = object : LandmarkerListener {
                     override fun onError(error: String, errorCode: Int) {
-                        Log.e(TAG, "MediaPipe FaceLandmarker error: $error")
-                        resetToNoFace() // Reset state on error
-                        onFacesDetected(emptyList()) // Report no faces
+                        Log.e(TAG, "MediaPipe error: $error")
+                        resetToNoFace()
+                        onAnalyzedFrame(emptyList(), null, LivenessStatus.NO_FACE, 0f)
                     }
 
                     override fun onResults(resultBundle: ResultBundle) {
-                        processMediaPipeResults(resultBundle) // Process detection results
+                        processMediaPipeResults(resultBundle)
                     }
                 }
             )
-            isInitialized = true // Mark as initialized
-            Log.d(TAG, "MediaPipe FaceLandmarker initialized with boundary validation")
+            isInitialized = true
+            Log.d(TAG, "MediaPipe FaceLandmarker initialized")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize MediaPipe FaceLandmarker", e)
-            isInitialized = false // Mark as not initialized on error
+            Log.e(TAG, "Failed to initialize FaceLandmarker", e)
+            isInitialized = false
         }
     }
 
@@ -135,29 +158,25 @@ class FaceAnalyzer(
     @OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
         if (!isInitialized) {
-            imageProxy.close() // Close the image if not initialized
-            return
+            imageProxy.close(); return
         }
 
-        frameCount++ // Increment frame counter
-
-        // Process only every Nth frame to reduce CPU load.
+        frameCount++
         if (frameCount % PROCESS_EVERY_N_FRAMES != 0) {
-            imageProxy.close()
-            return
+            imageProxy.close(); return
         }
 
         try {
-            // Pass the image to the MediaPipe helper for live stream detection.
             faceLandmarkerHelper?.detectLiveStream(
                 imageProxy = imageProxy,
-                isFrontCamera = isMirrored // Inform helper if front camera is used for mirroring
+                isFrontCamera = isMirrored
             )
+            // NOTE: helper will close imageProxy
         } catch (e: Exception) {
             Log.e(TAG, "Error in MediaPipe face analysis", e)
             imageProxy.close()
-            resetToNoFace() // Reset state on error
-            onFacesDetected(emptyList())
+            resetToNoFace()
+            onAnalyzedFrame(emptyList(), null, LivenessStatus.NO_FACE, 0f)
         }
     }
 
@@ -167,32 +186,31 @@ class FaceAnalyzer(
      * @param resultBundle The bundled results from the FaceLandmarkerHelper.
      */
     private fun processMediaPipeResults(resultBundle: ResultBundle) {
-        val result = resultBundle.results.firstOrNull() // Get the first (and only) face result
+        val result = resultBundle.results.firstOrNull()
 
-        // If no face detected or landmarks are empty, reset to NO_FACE status.
         if (result == null || result.faceLandmarks().isEmpty()) {
             resetToNoFace()
-            onFacesDetected(emptyList())
+            onAnalyzedFrame(emptyList(), null, LivenessStatus.NO_FACE, 0f)
             return
         }
 
-        val currentLandmarks = result.faceLandmarks()[0] // Get the landmarks for the first face
+        val currentLandmarks = result.faceLandmarks()[0]
 
-        // Calculate various metrics for the current frame
+        // metrics
         val facePosition = calculateFacePosition(currentLandmarks, resultBundle)
         val faceQuality = calculateFaceQuality(result, resultBundle)
         val positionScore = validateFacePosition(facePosition)
-        val faceBoundary = validateFaceBoundaries(currentLandmarks, resultBundle) // NEW: Boundary validation
+        val faceBoundary = validateFaceBoundaries(currentLandmarks, resultBundle)
 
-        // Add current frame's data to histories for temporal analysis
+        // histories
         addToHistories(
             currentLandmarks,
             faceQuality,
             facePosition,
-            faceBoundary.isCompletelyInFrame // NEW: Add boundary compliance to history
+            faceBoundary.isCompletelyInFrame
         )
 
-        // Perform enhanced validation with all calculated metrics, including boundaries.
+        // derive status
         val newStatus = performEnhancedValidationWithBoundaries(
             landmarks = currentLandmarks,
             quality = faceQuality,
@@ -200,31 +218,43 @@ class FaceAnalyzer(
             positionScore = positionScore,
             faceBoundary = faceBoundary
         )
-
-        // Update the overall liveness status, with stabilization logic.
         updateLivenessStatusBalanced(newStatus)
 
-        // Determine whether to show face bounding boxes based on current status.
+        // boxes for UI (preview coords)
         val faceBoxes = if (shouldShowFaceBox()) {
             convertLandmarksToFaceBoxes(result, resultBundle)
         } else {
             emptyList()
         }
 
-        // Enhanced logging for debugging and understanding status changes.
+        // 160x160 crop in INPUT-IMAGE coordinates from lastRgbFrame
+        val faceBitmap160 = try {
+            val src = lastRgbFrame
+            if (src != null) {
+                cropFace160FromInputImage(src, currentLandmarks, resultBundle, isMirrored)
+            } else null
+        } catch (t: Throwable) {
+            Log.w(TAG, "Crop failed", t); null
+        }
+
+        // emit to VM
         Log.d(
             TAG, """
-            Status: $currentLivenessStatus (${lastStableStatus})
-            Quality: ${String.format("%.2f", faceQuality)} (avg: ${String.format("%.2f", faceQualityHistory.average())})
-            Position: ${String.format("%.2f", positionScore)}
-            Boundary: ${faceBoundary.isCompletelyInFrame} (visibility: ${String.format("%.2f", faceBoundary.visibilityRatio)})
-            LiveFrames: $liveFrameCount/$LIVE_FRAMES_REQUIRED
-            StableFrames: $stableStatusCount/$STABLE_FRAMES_REQUIRED
-            BoundaryHistory: ${boundaryHistory.count { it }}/${boundaryHistory.size}
+            Status: $currentLivenessStatus ($lastStableStatus)
+            Quality: ${"%.2f".format(faceQuality)} (avg: ${
+                "%.2f".format(faceQualityHistory.ifEmpty {
+                    listOf(
+                        0f
+                    )
+                }.average())
+            })
+            PositionScore: ${"%.2f".format(positionScore)}
+            Boundary ok: ${faceBoundary.isCompletelyInFrame} (vis=${"%.2f".format(faceBoundary.visibilityRatio)})
+            LiveFrames: $liveFrameCount/$LIVE_FRAMES_REQUIRED  Stable: $stableStatusCount/$STABLE_FRAMES_REQUIRED
         """.trimIndent()
         )
 
-        onFacesDetected(faceBoxes) // Report detected face boxes back to the ViewModel
+        onAnalyzedFrame(faceBoxes, null, currentLivenessStatus, faceQuality)
     }
 
     /**
@@ -238,7 +268,7 @@ class FaceAnalyzer(
      */
     private fun validateFaceBoundaries(
         landmarks: List<NormalizedLandmark>,
-        resultBundle: ResultBundle
+        resultBundle: ResultBundle,
     ): FaceBoundary {
         val scaleX = previewWidth / resultBundle.inputImageWidth
         val scaleY = previewHeight / resultBundle.inputImageHeight
@@ -340,7 +370,7 @@ class FaceAnalyzer(
         quality: Float,
         position: FacePosition,
         positionScore: Float,
-        faceBoundary: FaceBoundary
+        faceBoundary: FaceBoundary,
     ): LivenessStatus {
 
         // Use average quality from history for more stability
@@ -408,7 +438,12 @@ class FaceAnalyzer(
 
         Log.d(
             TAG,
-            "Movement: ${String.format("%.4f", movementScore)}, Consistency: ${String.format("%.2f", consistencyScore)}"
+            "Movement: ${String.format("%.4f", movementScore)}, Consistency: ${
+                String.format(
+                    "%.2f",
+                    consistencyScore
+                )
+            }"
         )
 
         // Determine the final status based on all criteria.
@@ -449,7 +484,7 @@ class FaceAnalyzer(
         landmarks: List<NormalizedLandmark>,
         quality: Float,
         position: FacePosition,
-        isInBounds: Boolean // NEW parameter for boundary compliance
+        isInBounds: Boolean, // NEW parameter for boundary compliance
     ) {
         landmarkHistory.add(LandmarkFrame(landmarks, System.currentTimeMillis(), quality))
         if (landmarkHistory.size > LANDMARK_HISTORY_SIZE) {
@@ -599,7 +634,8 @@ class FaceAnalyzer(
                     val lastPosition = positionHistory.lastOrNull()
                     val positionScore = lastPosition?.let { validateFacePosition(it) } ?: 0f
                     val movementScore = analyzeMovementPatterns()
-                    val boundaryCompliance = boundaryHistory.lastOrNull() ?: false // Check latest boundary status
+                    val boundaryCompliance =
+                        boundaryHistory.lastOrNull() ?: false // Check latest boundary status
 
                     Log.d(
                         TAG,
@@ -673,7 +709,7 @@ class FaceAnalyzer(
      */
     private fun calculateFacePosition(
         landmarks: List<NormalizedLandmark>,
-        resultBundle: ResultBundle
+        resultBundle: ResultBundle,
     ): FacePosition {
         val centerX = landmarks.map { it.x() }.average().toFloat()
         val centerY = landmarks.map { it.y() }.average().toFloat()
@@ -695,7 +731,8 @@ class FaceAnalyzer(
     private fun validateFacePosition(position: FacePosition): Float {
         var score = 1.0f
         val imageArea = kotlin.math.sqrt((previewWidth * previewHeight).toDouble()).toFloat()
-        val faceSizeRatio = position.faceSize / imageArea // Ratio of face size to overall image size
+        val faceSizeRatio =
+            position.faceSize / imageArea // Ratio of face size to overall image size
 
         when {
             faceSizeRatio < MIN_FACE_SIZE_RATIO -> {
@@ -736,7 +773,7 @@ class FaceAnalyzer(
      */
     private fun calculateFaceQuality(
         result: FaceLandmarkerResult,
-        resultBundle: ResultBundle
+        resultBundle: ResultBundle,
     ): Float {
         val landmarks = result.faceLandmarks()[0]
         var qualityScore = 1.0f
@@ -771,7 +808,7 @@ class FaceAnalyzer(
      */
     private fun calculateFaceArea(
         landmarks: List<NormalizedLandmark>,
-        resultBundle: ResultBundle
+        resultBundle: ResultBundle,
     ): Float {
         val minX = landmarks.minOf { it.x() } * resultBundle.inputImageWidth
         val maxX = landmarks.maxOf { it.x() } * resultBundle.inputImageWidth
@@ -796,7 +833,8 @@ class FaceAnalyzer(
             val previous = recentFrames[i - 1].landmarks
             var frameMovement = 0f
             val landmarksToCheck = minOf(current.size, previous.size)
-            val step = maxOf(1, landmarksToCheck / 50) // Sample a subset of landmarks for efficiency
+            val step =
+                maxOf(1, landmarksToCheck / 50) // Sample a subset of landmarks for efficiency
 
             for (j in 0 until landmarksToCheck step step) {
                 // Calculate Euclidean distance between corresponding landmarks in two frames
@@ -864,7 +902,7 @@ class FaceAnalyzer(
      */
     private fun convertLandmarksToFaceBoxes(
         result: FaceLandmarkerResult,
-        resultBundle: ResultBundle
+        resultBundle: ResultBundle,
     ): List<FaceBox> {
         val faceBoxes = mutableListOf<FaceBox>()
         val scaleX = previewWidth / resultBundle.inputImageWidth
@@ -959,4 +997,80 @@ class FaceAnalyzer(
         isInitialized = false
         Log.d(TAG, "FaceAnalyzer closed")
     }
+
+    private fun yuvToRgbBitmap(image: ImageProxy): android.graphics.Bitmap {
+        val yBuffer = image.planes[0].buffer
+        val uBuffer = image.planes[1].buffer
+        val vBuffer = image.planes[2].buffer
+        val ySize = yBuffer.remaining()
+        val uSize = uBuffer.remaining()
+        val vSize = vBuffer.remaining()
+        val nv21 = ByteArray(ySize + uSize + vSize)
+        yBuffer.get(nv21, 0, ySize)
+        vBuffer.get(nv21, ySize, vSize)
+        uBuffer.get(nv21, ySize + vSize, uSize)
+
+        val yuvImage = android.graphics.YuvImage(
+            nv21, android.graphics.ImageFormat.NV21, image.width, image.height, null
+        )
+        val out = java.io.ByteArrayOutputStream()
+        yuvImage.compressToJpeg(
+            android.graphics.Rect(0, 0, image.width, image.height), 100, out
+        )
+        val bytes = out.toByteArray()
+        return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }
+
+    private fun rotateBitmapIfNeeded(
+        src: android.graphics.Bitmap,
+        rotationDegrees: Int,
+    ): android.graphics.Bitmap {
+        if (rotationDegrees == 0) return src
+        val m = android.graphics.Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+        return android.graphics.Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+    }
+
+    /**
+     * Crop using landmarks in INPUT-IMAGE pixels and return a 160×160 RGB bitmap.
+     * Uses the same padding as your boundary logic, but in input-image space.
+     */
+    private fun cropFace160FromInputImage(
+        source: android.graphics.Bitmap,
+        landmarks: List<com.google.mediapipe.tasks.components.containers.NormalizedLandmark>,
+        resultBundle: com.aican.biometricattendance.data.models.facelandmark.ResultBundle,
+        isMirrored: Boolean,
+    ): android.graphics.Bitmap? {
+        if (landmarks.isEmpty()) return null
+
+        // Bounds in input-image pixels
+        var minX = Float.MAX_VALUE;
+        var minY = Float.MAX_VALUE
+        var maxX = Float.MIN_VALUE;
+        var maxY = Float.MIN_VALUE
+        for (lm in landmarks) {
+            var x = lm.x() * resultBundle.inputImageWidth
+            val y = lm.y() * resultBundle.inputImageHeight
+            // If your helper already mirrors coords, do not mirror again.
+            // If not mirrored upstream, mirror X here for front camera:
+            // if (isMirrored) x = resultBundle.inputImageWidth - x
+            minX = minOf(minX, x); minY = minOf(minY, y)
+            maxX = maxOf(maxX, x); maxY = maxOf(maxY, y)
+        }
+
+        // Padding (same ratios you used in UI bbox)
+        val padX = (maxX - minX) * 0.15f
+        val padY = (maxY - minY) * 0.20f
+        val left = ((minX - padX).toInt()).coerceAtLeast(0)
+        val top = ((minY - padY).toInt()).coerceAtLeast(0)
+        val right = ((maxX + padX).toInt()).coerceAtMost(source.width)
+        val bottom = ((maxY + padY).toInt()).coerceAtMost(source.height)
+
+        val w = right - left
+        val h = bottom - top
+        if (w <= 0 || h <= 0) return null
+
+        val crop = android.graphics.Bitmap.createBitmap(source, left, top, w, h)
+        return android.graphics.Bitmap.createScaledBitmap(crop, 160, 160, true)
+    }
+
 }

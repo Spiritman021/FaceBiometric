@@ -201,10 +201,22 @@ class AttendanceVerificationViewModel(
                     previewWidth = previewWidth,
                     previewHeight = previewHeight,
                     isMirrored = isFrontCamera
-                ) { boxes ->
-                    updateFaceBoxes(boxes)
-                    // Trigger auto capture logic when faces are detected
+                ) { boxes, faceBitmap160, liveness, quality ->
+                    // push analyzer outputs to state
+                    viewModelScope.launch {
+                        _faceBoxes.emit(boxes)
+                        _livenessStatus.emit(liveness)
+                        _faceQualityScore.emit(quality)
+                    }
+                    // keep a reference to the first box for cropping on capture
+                    if (boxes.isNotEmpty()) {
+                        lastDetectedFaceBox = boxes.first()
+                    }
+                    // your existing auto-capture trigger
                     checkForAutoCapture(context)
+
+                    // If you ever want to skip ImageCapture and embed directly from frames:
+                    // faceBitmap160?.let { /* generate embedding & compare here */ }
                 }
 
                 currentAnalyzer = faceAnalyzer
@@ -216,7 +228,6 @@ class AttendanceVerificationViewModel(
                 )
             }
     }
-
     fun getFaceEmbeddingFromDatabase(id: String) {
         viewModelScope.launch {
             val result = faceEmbeddingRepository.findByEmployeeId(id)
@@ -666,7 +677,7 @@ class AttendanceVerificationViewModel(
     fun markAttendance(
         employeeId: String,
         eventType: AttendanceEventType,
-        matchPercent: Float
+        matchPercent: Float,
     ) {
         viewModelScope.launch {
             val newEntry = AttendanceEntity(
@@ -688,7 +699,9 @@ data class AttendanceResult(
     val success: Boolean,
     val similarity: Float,
     val message: String,
-    val timestamp: Long = System.currentTimeMillis()
+    val employeeId
+    : String = "",
+    val timestamp: Long = System.currentTimeMillis(),
 )
 
 enum class CaptureStatus {

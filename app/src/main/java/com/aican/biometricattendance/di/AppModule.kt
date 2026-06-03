@@ -3,6 +3,7 @@ package com.aican.biometricattendance.di
 import com.aican.biometricattendance.presentation.screens.camera.CameraPreviewViewModel
 import com.aican.biometricattendance.presentation.screens.face_registration.FaceRegistrationViewModel
 import com.aican.biometricattendance.presentation.screens.mark_attendance.AttendanceVerificationViewModel
+import com.aican.biometricattendance.presentation.screens.mark_attendance.NewAttendanceCameraViewModel
 import com.aican.biometricattendance.presentation.screens.registered_user.RegisteredUsersViewModel
 import com.aican.biometricattendance.presentation.screens.reports_screen.AttendanceReportViewModel
 import org.koin.core.module.dsl.viewModel
@@ -30,4 +31,12 @@ val viewModelModule = module {
         AttendanceVerificationViewModel(get(), get())
 
     }
+
+    viewModel {
+        NewAttendanceCameraViewModel(
+            faceEmbeddingRepository = get(),
+            attendanceRepository = get()
+        )
+    }
+
 }

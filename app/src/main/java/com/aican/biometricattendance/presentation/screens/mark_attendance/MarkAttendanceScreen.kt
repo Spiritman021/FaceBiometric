@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -30,19 +31,26 @@ fun MarkAttendanceScreen(
     modifier: Modifier = Modifier,
     id: String,
     navController: NavHostController,
-    viewModel: AttendanceVerificationViewModel,
+    viewModel: NewAttendanceCameraViewModel,
     handleClose: () -> Unit,
     onNavigateToFaceRegistration: (Uri) -> Unit,
 
     ) {
 
+
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
+
+    LaunchedEffect(Unit) {
+        viewModel.preloadAllEmbeddings()
+
+    }
+
+
     if (cameraPermissionState.status.isGranted) {
 
-        AttendanceCameraPreview(
-            id = id,
+        NewAttendanceCameraPreview(
             navController = navController,
-            attendanceVerificationViewModel = viewModel,
+            vm = viewModel,
             onClose = handleClose
         )
 

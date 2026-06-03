@@ -185,28 +185,39 @@ class CameraPreviewViewModel : ViewModel() {
      */
     private fun createImageAnalyzer(context: Context): ImageAnalysis {
         return ImageAnalysis.Builder()
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST) // Only process the latest frame
-            .setTargetAspectRatio(AspectRatio.RATIO_4_3) // Set target aspect ratio
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setTargetAspectRatio(AspectRatio.RATIO_4_3)
             .build()
             .also { analyzer ->
-                // Determine if the front camera is active for mirroring logic in FaceAnalyzer
                 val isFrontCamera = cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
 
                 val faceAnalyzer = FaceAnalyzer(
                     context = context,
                     previewWidth = previewWidth,
                     previewHeight = previewHeight,
-                    isMirrored = isFrontCamera // Pass mirroring info
-                ) { boxes ->
+                    isMirrored = isFrontCamera
+                ) { boxes, faceBitmap160, liveness, quality ->
+                    // 1) update boxes like before
                     updateFaceBoxes(boxes)
+
+                    // 2) push liveness + quality directly from analyzer’s callback
+                    //    (this avoids having to poll the analyzer getters)
+                    viewModelScope.launch {
+                        _livenessStatus.emit(liveness)
+                        _faceQualityScore.emit(quality)
+                    }
+
+                    // 3) OPTIONAL: if you want to use the cropped 160x160 face (e.g., registration/embedding),
+                    //    you have it here as `faceBitmap160`. Leave it unused for now.
+                    // faceBitmap160?.let { ... }
                 }
 
-                currentAnalyzer = faceAnalyzer // Store reference to the created analyzer
+                currentAnalyzer = faceAnalyzer
                 Log.d("CameraViewModel", "Face analyzer created")
 
                 analyzer.setAnalyzer(
-                    ContextCompat.getMainExecutor(context), // Use main thread executor
-                    faceAnalyzer // Set the custom analyzer
+                    ContextCompat.getMainExecutor(context),
+                    faceAnalyzer
                 )
             }
     }
