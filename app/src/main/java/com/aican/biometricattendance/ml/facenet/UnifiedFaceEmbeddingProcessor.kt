@@ -26,7 +26,7 @@ class UnifiedFaceEmbeddingProcessor(private val context: Context) {
         private const val TAG = "UnifiedFaceProcessor"
         private const val MODEL_FILE = "facenet.tflite" // Your FaceNet TFLite model file name
         const val INPUT_SIZE =
-            160 // FaceNet model's expected input image size (e.g., 160x160 pixels)
+            160 // FaceNet model's expected input image size (e.g., 160x160 pixels)a
         const val EMBEDDING_SIZE =
             512 // FaceNet model's output embedding size (e.g., 512-dimensional vector)
         private const val BYTES_PER_FLOAT = 4 // A float occupies 4 bytes

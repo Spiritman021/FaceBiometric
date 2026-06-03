@@ -13,6 +13,7 @@ import com.aican.biometricattendance.data.db.entity.FaceEmbeddingEntity
 import com.aican.biometricattendance.data.db.repository.FaceEmbeddingRepository
 import com.aican.biometricattendance.ml.facenet.FaceProcessingUtils
 import com.aican.biometricattendance.ml.facenet.UnifiedFaceEmbeddingProcessor
+import com.aican.biometricattendance.presentation.screens.camera.components.EmbeddingDebugger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -91,10 +92,14 @@ class FaceRegistrationViewModel(private val repository: FaceEmbeddingRepository)
 
                 val bitmap = BitmapFactory.decodeStream(inputStream)
                     ?: throw Exception("Failed to decode face image")
+                EmbeddingDebugger.logImageProcessing("REGISTRATION", bitmap, "Pre-cropped from camera")
+
                 inputStream.close()
 
                 val embeddingGenerator = UnifiedFaceEmbeddingProcessor(context)
                 val embeddingResult = embeddingGenerator.generateEmbedding(bitmap)
+                EmbeddingDebugger.logEmbeddingGeneration("REGISTRATION", embeddingResult.embedding, embeddingResult.success, embeddingResult.error)
+
                 embeddingGenerator.close()
 
                 if (embeddingResult.success && embeddingResult.embedding != null) {

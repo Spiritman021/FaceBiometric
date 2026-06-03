@@ -19,7 +19,13 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-
+//    androidResources {
+//        noCompress  'task', 'tflite'
+//    }
+    androidResources {
+        // Don’t compress MediaPipe task bundles or TFLite models
+        noCompress += listOf("task", "tflite")
+    }
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -86,8 +92,10 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-gpu-api:2.17.0")
     implementation("org.tensorflow:tensorflow-lite-gpu:2.17.0")
 
-    implementation("com.google.mediapipe:tasks-vision:0.20230731")
+//    implementation("com.google.mediapipe:tasks-vision:0.20230731")
 //    implementation("com.google.mediapipe:tasks-vision:0.20240308.1")
+    implementation("com.google.mediapipe:tasks-vision:0.10.26.1")
+
 
     implementation("io.coil-kt.coil3:coil-compose:3.3.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
@@ -102,4 +110,10 @@ dependencies {
     // See Add the KSP plugin to your project
     ksp("androidx.room:room-compiler:$room_version")
     implementation("androidx.room:room-ktx:${room_version}")
+
+
+    implementation("com.squareup.retrofit2:retrofit:3.0.0")
+    implementation("com.squareup.retrofit2:converter-gson:3.0.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:5.1.0")
+    implementation("com.squareup.retrofit2:converter-moshi:3.0.0")
 }

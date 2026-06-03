@@ -2,7 +2,9 @@ package com.aican.biometricattendance.ml.facenet
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.util.Log
+import androidx.exifinterface.media.ExifInterface
 import com.aican.biometricattendance.data.models.camera.FaceBox
 import java.io.File
 import kotlin.math.max
@@ -10,6 +12,30 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 object FaceProcessingUtils {
+
+     fun decodeUprightBitmapFromFile(file: File): Bitmap {
+        val raw = BitmapFactory.decodeFile(file.absolutePath)
+            ?: error("Decode failed: ${file.absolutePath}")
+
+        val exif = ExifInterface(file.absolutePath)
+        val orientation = exif.getAttributeInt(
+            ExifInterface.TAG_ORIENTATION,
+            ExifInterface.ORIENTATION_NORMAL
+        )
+
+        val degrees = when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+
+        if (degrees == 0f) return raw
+        val m = Matrix().apply { postRotate(degrees) }
+        return Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, m, false).also {
+            raw.recycle()
+        }
+    }
 
     private const val TAG = "FaceProcessingUtils"
     private const val FACENET_INPUT_SIZE = 160

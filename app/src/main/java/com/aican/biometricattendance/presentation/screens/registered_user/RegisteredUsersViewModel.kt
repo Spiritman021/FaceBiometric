@@ -19,4 +19,20 @@ class RegisteredUsersViewModel(
             _users.addAll(repository.getAll())
         }
     }
+
+    // NEW: delete one user by employeeId
+    fun deleteUserByEmployeeId(employeeId: String) {
+        viewModelScope.launch {
+            repository.deleteByEmployeeId(employeeId)
+            _users.removeAll { it.employeeId == employeeId }
+        }
+    }
+
+    // (Optional) delete all users
+    fun deleteAll() {
+        viewModelScope.launch {
+            repository.deleteAll()
+            _users.clear()
+        }
+    }
 }

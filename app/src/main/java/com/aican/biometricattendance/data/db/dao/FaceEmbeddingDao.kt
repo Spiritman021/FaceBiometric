@@ -1,6 +1,7 @@
 package com.aican.biometricattendance.data.db.dao
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -16,4 +17,15 @@ interface FaceEmbeddingDao {
 
     @Query("SELECT * FROM face_embeddings WHERE employeeId = :employeeId LIMIT 1")
     suspend fun findByEmployeeId(employeeId: String): FaceEmbeddingEntity?
+
+    @Delete
+    suspend fun delete(faceEmbedding: FaceEmbeddingEntity)
+
+    // NEW: delete by employeeId (handy for UI action)
+    @Query("DELETE FROM face_embeddings WHERE employeeId = :employeeId")
+    suspend fun deleteByEmployeeId(employeeId: String)
+
+    // (Optional) delete all
+    @Query("DELETE FROM face_embeddings")
+    suspend fun deleteAll()
 }

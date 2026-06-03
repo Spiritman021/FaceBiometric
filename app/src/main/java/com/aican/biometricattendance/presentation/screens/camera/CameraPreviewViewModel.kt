@@ -22,6 +22,7 @@ import com.aican.biometricattendance.data.models.enums.CameraType
 import com.aican.biometricattendance.data.models.faceembedding.EmbeddingQuality // Data class for embedding quality metrics
 import com.aican.biometricattendance.data.models.faceembedding.EmbeddingStats // Data class for embedding statistics
 import com.aican.biometricattendance.ml.camera.FaceAnalyzer // Custom ImageAnalysis.Analyzer for face detection and liveness
+import com.aican.biometricattendance.ml.facenet.FaceProcessingUtils.decodeUprightBitmapFromFile
 import com.aican.biometricattendance.ml.facenet.UnifiedFaceEmbeddingProcessor
 import com.aican.biometricattendance.services.camera.CameraController
 import com.aican.biometricattendance.services.face_recognition.FaceRegistrationService
@@ -338,7 +339,7 @@ class CameraPreviewViewModel : ViewModel() {
      */
     fun capturePhoto(
         context: Context,
-        onSaved: (Uri) -> Unit = {}
+        onSaved: (Uri) -> Unit = {},
     ) {
         // Pre-check for suitability
         if (!isFaceSuitableForCapture()) {
@@ -444,12 +445,13 @@ class CameraPreviewViewModel : ViewModel() {
     private suspend fun cropAndSaveFaceImage(
         originalPhotoFile: File,
         faceBox: FaceBox,
-        context: Context
+        context: Context,
     ): Uri? {
         return withContext(Dispatchers.IO) { // Perform on IO dispatcher for heavy operations
             try {
-                val originalBitmap = BitmapFactory.decodeFile(originalPhotoFile.absolutePath)
-                    ?: return@withContext null // Decode the full image
+//                val originalBitmap = BitmapFactory.decodeFile(originalPhotoFile.absolutePath)
+//                    ?: return@withContext null // Decode the full image
+                val originalBitmap = decodeUprightBitmapFromFile(originalPhotoFile)
 
                 Log.d(
                     "CameraViewModel", """
@@ -583,7 +585,7 @@ class CameraPreviewViewModel : ViewModel() {
     fun captureFaceWithPadding(
         context: Context,
         paddingRatio: Float = 0.15f, // 15% padding around face
-        onSaved: (Uri) -> Unit = {}
+        onSaved: (Uri) -> Unit = {},
     ) {
         if (!isFaceSuitableForCapture()) {
             Log.w("CameraViewModel", "Cannot capture: Face not suitable")
@@ -679,12 +681,13 @@ class CameraPreviewViewModel : ViewModel() {
         originalPhotoFile: File,
         faceBox: FaceBox,
         context: Context,
-        paddingRatio: Float
+        paddingRatio: Float,
     ): Uri? {
         return withContext(Dispatchers.IO) {
             try {
-                val originalBitmap = BitmapFactory.decodeFile(originalPhotoFile.absolutePath)
-                    ?: return@withContext null
+//                val originalBitmap = BitmapFactory.decodeFile(originalPhotoFile.absolutePath)
+//                    ?: return@withContext null
+                val originalBitmap = decodeUprightBitmapFromFile(originalPhotoFile)
 
                 val faceWidth = faceBox.right - faceBox.left
                 val faceHeight = faceBox.bottom - faceBox.top

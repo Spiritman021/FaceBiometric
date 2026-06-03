@@ -83,6 +83,10 @@ class FaceAnalyzer(
         private const val POSITION_HISTORY_SIZE = 5 // Number of frames to keep in position history
         private const val BOUNDARY_HISTORY_SIZE = 6 // Number of frames to keep in boundary history
 
+        // How many consistent frames for a status to be considered "stable"
+        // How many consistent frames for LIVE_FACE status
+        private const val LIVE_FRAMES_REQUIRED =
+            5
         // BALANCED thresholds for status transitions
         private const val STABLE_FRAMES_REQUIRED =
             4 // How many consistent frames for a status to be considered "stable"
@@ -110,6 +114,19 @@ class FaceAnalyzer(
         private const val FACE_COMPLETENESS_THRESHOLD = 0.95f // 95% of face must be visible
         private const val BOUNDARY_STABILITY_FRAMES =
             4 // Face must be within bounds for this many frames consistently
+    }
+
+    @Volatile
+    private var isPaused = false
+
+    fun pause() {
+        isPaused = true
+        Log.d(TAG, "⏸️ Face analysis paused.")
+    }
+
+    fun resume() {
+        isPaused = false
+        Log.d(TAG, "▶️ Face analysis resumed.")
     }
 
     init {
@@ -157,8 +174,9 @@ class FaceAnalyzer(
      */
     @OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
-        if (!isInitialized) {
-            imageProxy.close(); return
+        if (isPaused || !isInitialized) {
+            imageProxy.close()
+            return
         }
 
         frameCount++

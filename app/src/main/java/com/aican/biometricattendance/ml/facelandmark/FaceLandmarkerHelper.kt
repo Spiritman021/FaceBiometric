@@ -70,17 +70,20 @@ class FaceLandmarkerHelper(
         val baseOptionsBuilder = BaseOptions.builder()
 
         // Use the specified hardware for running the model. Default to CPU
-        when (currentDelegate) {
-            DELEGATE_CPU -> {
-                baseOptionsBuilder.setDelegate(Delegate.CPU)
-                Log.d(TAG, "✅ Using CPU delegate")
-            }
+//        when (currentDelegate) {
+//            DELEGATE_CPU -> {
+//                baseOptionsBuilder.setDelegate(Delegate.CPU)
+//                Log.d(TAG, "✅ Using CPU delegate")
+//            }
+//
+//            DELEGATE_GPU -> {
+//                baseOptionsBuilder.setDelegate(Delegate.GPU)
+//                Log.d(TAG, "✅ Using GPU delegate")
+//            }
+//        }
 
-            DELEGATE_GPU -> {
-                baseOptionsBuilder.setDelegate(Delegate.GPU)
-                Log.d(TAG, "✅ Using GPU delegate")
-            }
-        }
+        baseOptionsBuilder.setDelegate(Delegate.CPU)
+
 
         // CHECK: Model file exists
         try {
